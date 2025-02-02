@@ -9,29 +9,36 @@
 using namespace std;
 
 int main(int argc, char** argv) {
-		pid_t childPid = fork(); // This is where the child process splits from the parent
-		if (childPid == 0) {
-			printf("I am a child but a copy of parent! My parent's PID is %d, and my PID is %d\n",
-				getppid(), getpid());
-
-			string arg0 = "./child";
-			string arg1 = "Hello";
-			string arg2 = "there";
-			string arg3 = "exec";
-			string arg4 = "is";
-			string arg5 = "neat";
-			execlp(arg0.c_str(),arg0.c_str(),arg1.c_str(),arg2.c_str(),arg3.c_str(),arg4.c_str(),arg5.c_str(),(char *)0);			
-
-			fprintf(stderr,"Exec failed, terminating\n");
-			exit(1);	
-
-		} else {
-			printf("I'm a parent! My pid is %d, and my child's pid is %d \n",
-				getpid(), childPid);
-			//sleep(1);
-			wait(0);
+	int opt = {};
+	int n_proc, n_simul, n_iter = {};
+	while((opt = getopt(argc, argv, "hn:s:t:")) != -1)
+	{
+		switch(opt)
+		{
+			case 'h':
+				printf("You have called the -%c flag.\nTo use this program you need to supply 3 flags:\n"
+						"-n proc for how many processes you would like to create\n"
+						"-s simul for how many simultaneous processes you would like\n"
+						"-t iter for how many iterations you would like\n"
+						"ex: oss -n 3 -s 3 -t 8\n\n", opt);
+				return EXIT_SUCCESS;
+			case 'n':
+				n_proc = atoi(optarg);
+				break;
+			case 's':
+				n_simul = atoi(optarg);
+				break;
+			case 't':
+				n_iter = atoi(optarg);
+				break;
+			case '?':
+				// case ? takes out all the incorrect flags and causes the program to fail. This helps protect the program from undefined behavior
+				fprintf(stderr, "Incorrect flags submitted -%c\n\n", optopt);
+				return EXIT_FAILURE;
 		}
-		printf("Parent is now ending.\n");
-		return EXIT_SUCCESS;
+	}
+	printf("Values acquired: -n %d, -s %d, -t %d\n\n", n_proc, n_simul, n_iter);
+
+	return EXIT_SUCCESS;
 }
 
