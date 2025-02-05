@@ -15,10 +15,10 @@ $(TARGET2):	$(OBJS2)
 	$(CXX) -o $(TARGET2) $(OBJS2)
 
 user.o:	user.cpp
-	$(CC) $(CFLAGS) -c user.cpp 
+	$(CXX) $(CXXFLAGS) -c user.cpp 
 
 oss.o:	oss.cpp
-	$(CC) $(CFLAGS) -c oss.cpp
+	$(CXX) $(CXXFLAGS) -c oss.cpp
 
 clean:
 	/bin/rm -f *.o $(TARGET1) $(TARGET2)
