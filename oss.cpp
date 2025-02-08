@@ -1,9 +1,9 @@
 #include<unistd.h>
+#include<queue>
 #include<sys/types.h>
 #include<stdio.h>
 #include<stdlib.h>
 #include<sys/wait.h>
-#include<queue>
 #include<string>
 
 using namespace std;
@@ -24,7 +24,7 @@ class UserLauncher
 		{
 			for (int i = 0; i < n_proc; i++) 
 			{
-
+				manageProcesses();
 				pid_t childPid = fork();
 
 				if (childPid < 0)
@@ -33,7 +33,7 @@ class UserLauncher
 					exit(EXIT_FAILURE);
 				} else if (childPid == 0) // Have process lets execute it 
 				{
-					execl("./user", "user", to_string(n_proc).c_str(), NULL);
+					execl("./user", "user", to_string(n_iter).c_str(), NULL); // execl needs to terminate with NULL pointer
 
 					perror("execl failed");
 					exit(EXIT_FAILURE);
@@ -44,7 +44,30 @@ class UserLauncher
 								 // Ideally we can call the size of the queue and check it against our allowed number of simultaneous processes 
 				}
 			}
-			wait(NULL);
+			waitProcesses();
+		}
+	private:
+		void manageProcesses()
+		// Function that should manage the number of running processes	
+		{
+			while (processes.size() >= static_cast<size_t>(n_simul))
+			{
+				pid_t finishedChild = wait(NULL); //wait(NULL) returns the child process when it finishes!
+				if (finishedChild > 0)
+				{
+					printf("\nProcess Number: %d being popped from queue\n", processes.front()); 
+					processes.pop(); // If a process has finished pop it off the queue so now we can add another process
+				}
+			}
+		}
+		
+		void waitProcesses()
+		{
+			while (!processes.empty()) 
+			{
+				waitpid(processes.front(), NULL, 0);
+				processes.pop();	
+			}	
 		}
 };
 
