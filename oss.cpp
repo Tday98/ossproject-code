@@ -27,16 +27,23 @@ class UserLauncher
 			{
 				perror("Fork failed");
 				exit(EXIT_FAILURE);
-			} else if (childPid == 0) 
+			} else if (childPid == 0) // Have process lets execute it 
 			{
-					
+				execl("./user", "user", to_string(n_proc), NULL);
+
+				perror("execl failed");
+				exit(EXIT_FAILURE);
+
+			} else
+			{
+				// Need to figure out what childPid > 0 equals
 			}
 		}
-}
+};
 
-UserLauncher parser(int argc, char** argv)
+UserLauncher argParser(int argc, char** argv)
 {
-int opt = {};
+	int opt = {};
         int n_proc, n_simul, n_iter = {};
         while((opt = getopt(argc, argv, "hn:s:t:")) != -1)
         {
@@ -48,7 +55,7 @@ int opt = {};
                                                 "-s simul for how many simultaneous processes you would like\n"
                                                 "-t iter for how many iterations you would like\n"
                                                 "ex: oss -n 3 -s 3 -t 8\n\n", opt);
-                                return EXIT_SUCCESS;
+                                exit(EXIT_SUCCESS);
                         case 'n':
                                 n_proc = atoi(optarg);
                                 break;
@@ -61,7 +68,7 @@ int opt = {};
                         case '?':
                                 // case ? takes out all the incorrect flags and causes the program to fail. This helps protect the program from undefined behavior
                                 fprintf(stderr, "Incorrect flags submitted -%c\n\n", optopt);
-                                return EXIT_FAILURE;
+                                exit(EXIT_FAILURE);
                 }
         }
         printf("Values acquired: -n %d, -s %d, -t %d\n\n", n_proc, n_simul, n_iter);	
@@ -71,7 +78,8 @@ int opt = {};
 
 int main(int argc, char** argv) 
 {
-	UserLauncher launcher = parser(argc, argv);
+	UserLauncher launcher = argParser(argc, argv);
+	launcher.launchProcesses();
 	return EXIT_SUCCESS;
 }
 
