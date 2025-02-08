@@ -1,12 +1,17 @@
 #include<unistd.h>
-#include<queue>
 #include<sys/types.h>
 #include<stdio.h>
 #include<stdlib.h>
 #include<sys/wait.h>
+#include<map>
 #include<string>
 
 using namespace std;
+
+/*
+ * Author: Tristan Day CS 4760
+ * Professor: Mark Hauschild
+ */
 
 class UserLauncher 
 {
@@ -14,7 +19,7 @@ class UserLauncher
 		int n_proc;
 		int n_simul;
 		int n_iter;
-		queue<pid_t> processes;
+		map<pid_t, pid_t> processes;
 	
 	public:
 		// Constructor to build UserLauncher object
@@ -40,8 +45,7 @@ class UserLauncher
 
 				} else
 				{
-					processes.push(childPid); // else means that we have a child process so lets push that process into a queue so we know how many we have. 
-								 // Ideally we can call the size of the queue and check it against our allowed number of simultaneous processes 
+					processes[childPid] = childPid; // else means that we have a child process so lets push that process into a map so we know how many we have and we will have O(1) access.  
 				}
 			}
 			waitProcesses();
@@ -53,10 +57,14 @@ class UserLauncher
 			while (processes.size() >= static_cast<size_t>(n_simul))
 			{
 				pid_t finishedChild = wait(NULL); //wait(NULL) returns the child process when it finishes!
-				if (finishedChild > 0)
+				auto iterator = processes.find(finishedChild);
+				if (iterator != processes.end())
 				{
-					printf("\nProcess Number: %d being popped from queue\n", processes.front()); 
-					processes.pop(); // If a process has finished pop it off the queue so now we can add another process
+					printf("\nProcess Number: %d being erases from process map\n", finishedChild); 
+					processes.erase(finishedChild); // If a process has finished pop it off the queue so now we can add another process
+				} else 
+				{
+					printf("Process %d not found", finishedChild);
 				}
 			}
 		}
@@ -65,8 +73,9 @@ class UserLauncher
 		{
 			while (!processes.empty()) 
 			{
-				waitpid(processes.front(), NULL, 0);
-				processes.pop();	
+				int wstatus;
+				pid_t childPid = waitpid(-1, &wstatus, 0);
+				processes.erase(childPid);	
 			}	
 		}
 };

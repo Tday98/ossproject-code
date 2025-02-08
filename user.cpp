@@ -2,11 +2,17 @@
 #include<sys/types.h>
 #include<stdio.h>
 #include<stdlib.h>
+
+/**
+ * Author: Tristan Day CS 4760
+ * Professor: Mark Hauschild
+ */
+
 int main(int argc, char** argv) 
 {
 		int i;
 		int iteration = atoi(argv[1]);
-		printf("Iterations are %d\n\n", iteration);
+		
 		if (argc < 2) 
 			return EXIT_FAILURE;
 		
@@ -19,7 +25,7 @@ int main(int argc, char** argv)
 
 		printf("\nUser is now ending.\n");
 		
-		sleep(3);
+		sleep(2);
 		
 		return EXIT_SUCCESS;
 }
