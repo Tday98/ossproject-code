@@ -29,7 +29,7 @@ class UserLauncher
 				exit(EXIT_FAILURE);
 			} else if (childPid == 0) // Have process lets execute it 
 			{
-				execl("./user", "user", to_string(n_proc), NULL);
+				execl("./user", "user", to_string(n_proc).c_str(), NULL);
 
 				perror("execl failed");
 				exit(EXIT_FAILURE);

@@ -6,7 +6,7 @@ int main(int argc, char** argv)
 {
 		int i;
 		int iteration = atoi(argv[1]);
-
+		printf("Iterations are %d\n\n", iteration);
 		if (argc < 2) 
 			return EXIT_FAILURE;
 		
