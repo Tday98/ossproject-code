@@ -3,12 +3,30 @@
 #include<stdio.h>
 #include<stdlib.h>
 #include<sys/wait.h>
-
-#include <string>
+#include<queue>
+#include<string>
 
 using namespace std;
 
-int main(int argc, char** argv) {
+class UserLauncher 
+{
+	private:
+		int n_proc;
+		int n_simul;
+		int n_iter;
+	
+	public:
+		// Constructor to build UserLauncher object
+		UserLauncher(int n, int s, int t) : n_proc(n), n_simul(s), n_iter(t) {}
+
+		void launchProcess() 
+		{
+
+		}
+}
+
+int main(int argc, char** argv) 
+{
 	int opt = {};
 	int n_proc, n_simul, n_iter = {};
 	while((opt = getopt(argc, argv, "hn:s:t:")) != -1)
