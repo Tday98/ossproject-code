@@ -14,6 +14,7 @@ class UserLauncher
 		int n_proc;
 		int n_simul;
 		int n_iter;
+		queue<pid_t> processes;
 	
 	public:
 		// Constructor to build UserLauncher object
@@ -21,23 +22,29 @@ class UserLauncher
 
 		void launchProcesses() 
 		{
-			pid_t childPid = fork();
-
-			if (childPid < 0)
+			for (int i = 0; i < n_proc; i++) 
 			{
-				perror("Fork failed");
-				exit(EXIT_FAILURE);
-			} else if (childPid == 0) // Have process lets execute it 
-			{
-				execl("./user", "user", to_string(n_proc).c_str(), NULL);
 
-				perror("execl failed");
-				exit(EXIT_FAILURE);
+				pid_t childPid = fork();
 
-			} else
-			{
-				// Need to figure out what childPid > 0 equals
+				if (childPid < 0)
+				{
+					perror("Fork failed");
+					exit(EXIT_FAILURE);
+				} else if (childPid == 0) // Have process lets execute it 
+				{
+					execl("./user", "user", to_string(n_proc).c_str(), NULL);
+
+					perror("execl failed");
+					exit(EXIT_FAILURE);
+
+				} else
+				{
+					processes.push(childPid); // else means that we have a child process so lets push that process into a queue so we know how many we have. 
+								 // Ideally we can call the size of the queue and check it against our allowed number of simultaneous processes 
+				}
 			}
+			wait(NULL);
 		}
 };
 
