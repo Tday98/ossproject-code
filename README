@@ -1,0 +1,36 @@
+# Process Management System
+Project for OS 4760 with Professor Mark Hauschild
+Author: Tristan Day
+
+## Overview
+I use the following Unix/Linux system calls to launch child processes and manage them from a parent process: fork(), execl(), and waitpid().
+I tried an OOP based approach to handle the creating and management of child processes. I have a UserLauncher class that contains 4 private elements.
+This has project has two parts oss.cpp and user.cpp. oss.cpp is the main process of the project whereas user.cpp is the child process.
+A demo call using this project is "./oss -n 7 -s 3 -t 8" which would create 7 processes with a maximum of 3 running simultaneously.
+
+## UserLauncher
+These elements are n_proc (number processes), n_simul (number simultaneous), n_iter (number iterations), and a map<pid_t, pid_t> processTable. 
+The process table was my way to try to keep track of how many processes are running concurrently.
+
+### void launchProcesses()
+This function forks of a child process up to n_proc while making function calls to manageSimProcesses(). It has some simple error handling incase of fork failure and execl failure.
+It makes a call with execl() to the user executable passing through the number of iterations as supplied with -t. After a child process is created it is added to the processTable for management purposes.
+
+### void manageSimProcesses()
+This is my simultaneous process manager. It allows for only the amount of simultaneous processes defined in from the command line arguments and stored in the n_simul variable.
+It utilizes waitpid() so that it can get the child PID when it completes the iterations. The function then erases that PID from the processTable and decrements the number of current simultaneous processes.
+
+### void waitProcesses()
+This is my catch that I call at the end of my launchProcesses() function. It checks the processTable for any PIDs still left in the set and if there are any it will wait for it to finish so I don't accidently create a zombie process.
+
+## Global functions
+### UserLauncher argParser(int argc, char** argv)
+This function just parses the command line arguments using getopt and then creates a UserLauncher object with the user supplied values in -n -s -t.
+
+## Issues I've had this far
+I had some issues with my simultaneous process management. I would run my program and it would correctly run up to the number of defined simultaneous processes but then it would kick out a cli prompt and some extra lines of text indicating another process finished.
+After doing some digging I found that what I was encountering was a race condition -> zombie process.
+I was able to finally correct the bug through the correction of my waitProcesses() function.
+
+## Next steps
+I want to do more with my processTable I want to design it so that I can get feedback on the state of the process but I will wait to see what the next part of this project assignment is.
