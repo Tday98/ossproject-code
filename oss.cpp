@@ -19,7 +19,7 @@ class UserLauncher
 		int n_proc;
 		int n_simul;
 		int n_iter;
-		map<pid_t, pid_t> processes;
+		map<pid_t, pid_t> processTable;
 	
 	public:
 		// Constructor to build UserLauncher object
@@ -27,9 +27,10 @@ class UserLauncher
 
 		void launchProcesses() 
 		{
-			for (int i = 0; i < n_proc; i++) 
+			int ranProcesses {0};
+			while (ranProcesses < n_proc) 
 			{
-				manageProcesses();
+				manageSimProcesses();
 				pid_t childPid = fork();
 
 				if (childPid < 0)
@@ -43,40 +44,42 @@ class UserLauncher
 					perror("execl failed");
 					exit(EXIT_FAILURE);
 
-				} else
-				{
-					processes[childPid] = childPid; // else means that we have a child process so lets push that process into a map so we know how many we have and we will have O(1) access.  
 				}
+				processTable[childPid] = childPid; // else means that we have a child process so lets push that process into a map so we know how many we have and we will have O(1) access.  
+				ranProcesses++;
 			}
 			waitProcesses();
 		}
 	private:
-		void manageProcesses()
-		// Function that should manage the number of running processes	
+		void manageSimProcesses()
+		// Function that manages the number of allowed simultaneous processes	
 		{
-			while (processes.size() >= static_cast<size_t>(n_simul))
+			int status {};
+			size_t currentSimul = n_simul;
+			while (processTable.size() >= currentSimul)
 			{
-				pid_t finishedChild = wait(NULL); //wait(NULL) returns the child process when it finishes!
-				auto iterator = processes.find(finishedChild);
-				if (iterator != processes.end())
-				{
-					printf("\nProcess Number: %d being erases from process map\n", finishedChild); 
-					processes.erase(finishedChild); // If a process has finished pop it off the queue so now we can add another process
-				} else 
-				{
-					printf("Process %d not found", finishedChild);
-				}
+				pid_t finishedChild = waitpid(-1, &status, 0); //waitpid() returns the child pid and status when it finishes!
+				printf("\nPID: %d has finished with status %d\n", finishedChild, status); 
+				processTable.erase(finishedChild);
+				currentSimul--;
+				if (!currentSimul)
+					break;
 			}
 		}
 		
 		void waitProcesses()
+		// Function that waits for any leftover processes to finish based on whats left in the process table
 		{
-			while (!processes.empty()) 
+			int status {};
+			while (!processTable.empty())
 			{
-				int wstatus;
-				pid_t childPid = waitpid(-1, &wstatus, 0);
-				processes.erase(childPid);	
-			}	
+				pid_t finalChild = waitpid(-1, &status, 0);
+                        	if (finalChild > -1)
+                       		{
+                                	printf("PID: %d has finished with status %d\n", finalChild, status);
+                                	processTable.erase(finalChild);
+                        	}
+			}
 		}
 };
 

@@ -23,9 +23,8 @@ int main(int argc, char** argv)
 			printf("USER PID:%d  PPID:%d Iteration:%d after sleeping\n", getpid(), getppid(), i+1);
 		}
 
-		printf("\nUser is now ending.\n");
+		printf("\nProcess %d is now ending.\n", getpid());
 		
-		sleep(2);
 		
 		return EXIT_SUCCESS;
 }
