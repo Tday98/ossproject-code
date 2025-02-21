@@ -18,11 +18,11 @@ using namespace std;
 const int sh_key = ftok("worker.cpp", 26);
 int shm_id;
 
-struct simClock
+struct simulClock
 {
 	int seconds;
 	int nanoseconds;
-}
+};
 
 struct PCB 
 {
@@ -30,18 +30,21 @@ struct PCB
 	pid_t pid;
 	int startSeconds;
 	int startNano;
-}
+};
 
 struct PCB processTable[20];
-struct simClock *clock;
+struct simulClock *simClock;
 
 void incrementClock();
+void findProcesses(size_t *activeProcesses);
+void endProcess(pid_t *child);
 
 class WorkerLauncher 
 {
 	private:
 		int n_proc;
 		int n_simul;
+		int n_time;
 		int n_inter;
 	
 	public:
@@ -63,7 +66,7 @@ class WorkerLauncher
 					exit(EXIT_FAILURE);
 				} else if (childPid == 0) // Have process lets execute it 
 				{
-					execl("./user", "user", to_string(n_iter).c_str(), NULL); // execl needs to terminate with NULL pointer
+					execl("./worker", "worker", to_string(n_inter).c_str(), NULL); // execl needs to terminate with NULL pointer
 
 					perror("execl failed");
 					exit(EXIT_FAILURE);
@@ -72,8 +75,10 @@ class WorkerLauncher
 			      	processTable[ranProcesses].occupied = 1;
 				processTable[ranProcesses].pid = childPid;	
 				ranProcesses++;
+				autoShutdown();
 			}
 			waitProcesses();
+			autoShutdown();
 		}
 	private:
 		void manageSimProcesses()
@@ -81,12 +86,17 @@ class WorkerLauncher
 		{
 			int status {};
 			size_t currentSimul = n_simul;
-			while (processTable.size() >= currentSimul)
+			size_t active = 0;
+			findProcesses(&active);
+			while (active >= currentSimul)
 			{
 				pid_t finishedChild = waitpid(-1, &status, WNOHANG); //waitpid() returns the child pid and status when it finishes!
-				printf("\nPID: %d has finished with status %d\n", finishedChild, status); 
-				// TODO: remove process from processTable!
-				currentSimul--;
+				if (!finishedChild)
+				{
+					printf("\nPID: %d has finished with status %d\n", finishedChild, status); 
+					endProcess(&finishedChild);
+					currentSimul--;
+				}
 				if (!currentSimul)
 					break;
 			}
@@ -96,41 +106,67 @@ class WorkerLauncher
 		// Function that waits for any leftover processes to finish based on whats left in the process table
 		{
 			int status {};
-			while (!processTable.empty())
+			size_t active = 0;
+			findProcesses(&active);
+			while (active > 0)
 			{
 				pid_t child = waitpid(-1, &status, WNOHANG);
-                        	if (!finalChild)
+                        	if (!child)
                        		{
-                                	printf("PID: %d has finished with status %d\n", finalChild, status);
-                                	// TODO: remove process from processTable
+                                	printf("PID: %d has finished with status %d\n", child, status);
+                                	endProcess(&child);	
                         	}
 			}
 		}
 
 		void autoShutdown()
 		{
-			if (clock->seconds >= 60)
+			if (simClock->seconds >= 60)
 			{
-				shmdt(clock);
+				shmdt(simClock);
 				shmctl(shm_id, IPC_RMID, NULL);
+				printf("\nTime exceeded, cleaning up and shutting down.\n");
+				exit(EXIT_SUCCESS);
 			}
 		}
 };
 
+void findProcesses(size_t *activeProcesses)
+{
+	for (int i = 0; i < 20; i++)
+	{
+		if (processTable[i].occupied)
+		{
+			(*activeProcesses)++;
+		}
+	}
+}
+
+void endProcess(pid_t *child)
+{
+	for (int i = 0; i < 20; i++)
+	{
+		if (processTable[i].pid == (*child))
+		{
+			processTable[i].occupied = 0;
+		}
+	}
+}
+
 void incrementClock()
 {
-	clock->nanoseconds += 100000000; // Lets start with a hundred million nanoseconds or 100ms
-	if (clock->nanoseconds >= 1000000000)
+	simClock->nanoseconds += 100000000; // Lets start with a hundred million nanoseconds or 100ms
+	if (simClock->nanoseconds >= 1000000000)
 	{
-		clock->seconds += 1;
-		clock->nanoseconds = 0; // move seconds up nanoseconds back to 0
+		simClock->seconds += 1;
+		simClock->nanoseconds = 0; // move seconds up nanoseconds back to 0
 	}
 }
 
 WorkerLauncher argParser(int argc, char** argv)
 {
 	int opt = {};
-        int n_proc, n_simul, n_time n_inter = {};
+        int n_proc, n_simul, n_time, n_inter = {};
         while((opt = getopt(argc, argv, "hn:s:t:")) != -1)
         {
                 switch(opt)
@@ -160,37 +196,37 @@ WorkerLauncher argParser(int argc, char** argv)
                                 exit(EXIT_FAILURE);
                 }
         }
-        printf("Values acquired: -n %d, -s %d, -t %d\n\n", n_proc, n_simul, n_iter);	
+        printf("Values acquired: -n %d, -s %d, -t %d, -i %d\n\n", n_proc, n_simul, n_time, n_inter);	
 	
-	return UserLauncher(n_proc, n_simul, n_iter);
+	return WorkerLauncher(n_proc, n_simul, n_time, n_inter);
 }
 
 int main(int argc, char** argv) 
 {
-	shm_id = shmget(sh_key, sizeof(struct simClock), IPC_CREAT | 0666);
+	shm_id = shmget(sh_key, sizeof(struct simulClock), IPC_CREAT | 0666);
 	if (shm_id <= 0)
 	{
 		fprintf(stderr, "Shared memory get failed\n");
 		exit(EXIT_FAILURE);
 	}
 
-	clock = (struct simClock *)shmat(shm_id, 0, 0);
-	if (clock <= 0)
+	simClock = (struct simulClock *)shmat(shm_id, 0, 0);
+	if (simClock <= (void *)0)
 	{
 		fprintf(stderr, "attaching clock to shared memory failed\n");
 		exit(EXIT_FAILURE);
 	}
 
-	clock->seconds = 0;
-	clock->nanoseconds = 0;
+	simClock->seconds = 0;
+	simClock->nanoseconds = 0;
 
-	printf("Start clock values: %d seconds %d nanoseconds\n\n", clock->seconds, clock->nanoseconds);
+	printf("Start clock values: %d seconds %d nanoseconds\n\n", simClock->seconds, simClock->nanoseconds);
 
 	WorkerLauncher launcher = argParser(argc, argv);
 	launcher.launchProcesses();
 
 	// cleanup shared memory
-	shmdt(clock);
+	shmdt(simClock);
 	shmctl(shm_id, IPC_RMID, NULL);
 
 	return EXIT_SUCCESS;
