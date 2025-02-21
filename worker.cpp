@@ -32,33 +32,31 @@ int main(int argc, char** argv)
 			exit(EXIT_FAILURE);
 		}
 
-		struct simulClock *clock = (struct simulClock *)shmat(shm_id, 0, 0);
-		if (clock <= (void *)0)
+		struct simulClock *simClock = (struct simulClock *)shmat(shm_id, 0, 0);
+		if (simClock <= (void *)0)
 		{
 			fprintf(stderr, "Worker failed shmat");
 			exit(EXIT_FAILURE);
 		}
-		int end_secondtime = clock->seconds + wseconds;
-		int end_nanotime = clock->nanoseconds + wnanoseconds;
+		int end_secondtime = simClock->seconds + wseconds;
 
-		printf("WORKER PID:%d PPID:%d SysClockS: %d SysclockNano: %d TermTimeS: %d TermTimeNano: %d\n--Just Starting\n", getpid(), getppid(), clock->seconds, clock->nanoseconds, wseconds, wnanoseconds);
-		int timekeeper = clock->seconds;
+		printf("WORKER PID:%d PPID:%d SysClockS: %d SysclockNano: %d TermTimeS: %d TermTimeNano: %d\n--Just Starting\n", getpid(), getppid(), simClock->seconds, simClock->nanoseconds, wseconds, wnanoseconds);
 		int time = 1;
 		while (1)
 		{
-			if (end_secondtime >= clock->seconds && end_nanotime >= clock->nanoseconds)
+			if (end_secondtime >= simClock->seconds)
 			{
-				if (timekeeper < clock->seconds)
-				{
-					printf("WORKER PID:%d PPID:%d SysClockS: %d SysclockNano: %d TermTimeS: %d TermTimeNano: %d\n%d seconds have passed since starting\n", getpid(), getppid(), clock->seconds, clock->nanoseconds, wseconds, wnanoseconds, time);
-					timekeeper = clock->seconds;
-					time++;
-				}
+				printf("WORKER PID:%d PPID:%d SysClockS: %d SysclockNano: %d TermTimeS: %d TermTimeNano: %d\n%d seconds have passed since starting\n", getpid(), getppid(), simClock->seconds, simClock->nanoseconds, wseconds, wnanoseconds, time);
+				time++;
 			}
 			else
+			{
+				shmdt(simClock);
 				return EXIT_SUCCESS;
+		
+			}
 		}
-
+		shmdt(simClock);
 		return EXIT_SUCCESS;
 }
 

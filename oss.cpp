@@ -7,6 +7,7 @@
 #include<string>
 #include<sys/ipc.h>
 #include<sys/shm.h>
+#include<random>
 
 using namespace std;
 
@@ -38,6 +39,9 @@ struct simulClock *simClock;
 void incrementClock();
 void findProcesses(size_t *activeProcesses);
 void endProcess(pid_t *child);
+void generateWorkTime(int n_inter, int *wseconds, int *wnanoseconds);
+void printPCB();
+void PCB_entry(pid_t *child);
 
 class WorkerLauncher 
 {
@@ -54,30 +58,39 @@ class WorkerLauncher
 		void launchProcesses() 
 		{
 			int ranProcesses {0};
+			int wseconds {};
+			int wnanoseconds {};
+			int waitms = n_inter * 100000;
+			int previousnano {};
 			while (ranProcesses < n_proc) 
 			{
 				//manageSimProcesses();
 				incrementClock();
-				pid_t childPid = fork();
 				
-				if (childPid < 0)
+				if (simClock->nanoseconds == 0 || (simClock->nanoseconds >= 500000000 && simClock->nanoseconds < 600000000))
+					printPCB();
+				if (!(simClock->nanoseconds % waitms) && simClock->nanoseconds != previousnano)
 				{
-					perror("Fork failed");
-					exit(EXIT_FAILURE);
-				} else if (childPid == 0) // Have process lets execute it 
-				{
-					execl("./worker", "worker", to_string(n_inter).c_str(), NULL); // execl needs to terminate with NULL pointer
+					previousnano = simClock->nanoseconds;
+					pid_t childPid = fork();
+					PCB_entry(&childPid);		
+					if (childPid < 0)
+					{
+						perror("Fork failed");
+						exit(EXIT_FAILURE);
+					} else if (childPid == 0) // Have process lets execute it 
+					{
+						generateWorkTime(n_time, &wseconds, &wnanoseconds);
+						execl("./worker", "worker", to_string(wseconds).c_str(), to_string(wnanoseconds).c_str(), NULL); // execl needs to terminate with NULL pointer
+						perror("execl failed");
+						exit(EXIT_FAILURE);
 
-					perror("execl failed");
-					exit(EXIT_FAILURE);
-
+					}
 				}
-			      	processTable[ranProcesses].occupied = 1;
-				processTable[ranProcesses].pid = childPid;	
 				ranProcesses++;
 				autoShutdown();
+				waitProcesses();
 			}
-			waitProcesses();
 			autoShutdown();
 		}
 	private:
@@ -91,7 +104,7 @@ class WorkerLauncher
 			while (active >= currentSimul)
 			{
 				pid_t finishedChild = waitpid(-1, &status, WNOHANG); //waitpid() returns the child pid and status when it finishes!
-				if (!finishedChild)
+				if (finishedChild)
 				{
 					printf("\nPID: %d has finished with status %d\n", finishedChild, status); 
 					endProcess(&finishedChild);
@@ -111,7 +124,7 @@ class WorkerLauncher
 			while (active > 0)
 			{
 				pid_t child = waitpid(-1, &status, WNOHANG);
-                        	if (!child)
+                        	if (child)
                        		{
                                 	printf("PID: %d has finished with status %d\n", child, status);
                                 	endProcess(&child);	
@@ -130,6 +143,43 @@ class WorkerLauncher
 			}
 		}
 };
+
+void PCB_entry(pid_t *child)
+{
+	for (int i = 0; i < 20; i++)
+	{
+		if (!processTable[i].occupied)
+		{
+			processTable[i].occupied = 1;
+			processTable[i].pid = (*child);
+			processTable[i].startSeconds = simClock->seconds;
+			processTable[i].startNano = simClock->nanoseconds;
+			break;
+		}
+	}
+}
+
+void printPCB()
+{
+	printf("\nOSS PID:%d SysClockS: %d SysclockNano: %d\nProcess Table:\n", getpid(), simClock->seconds, simClock->nanoseconds);
+	printf("Entry\tOccupied\tPID\tStartS\tStartN\n");
+	for (int i = 0; i < 20; i++) printf("%d\t%d\t%d\t%d\t%d", i, processTable[i].occupied, processTable[i].pid, processTable[i].startSeconds, processTable[i].startNano);
+}
+
+void generateWorkTime(int n_time, int *wseconds, int *wnanoseconds)
+{
+	int secmin = 1;
+	int secmax = n_time;
+	int nanomin = 0;
+	int nanomax = 1000000000;
+
+	random_device rd;
+	mt19937 gen(rd());
+	uniform_int_distribution<> distribsec(secmin, secmax);
+	uniform_int_distribution<> distribnano(nanomin, nanomax);
+	*wseconds = distribsec(gen);
+	*wnanoseconds = distribnano(gen);
+}
 
 void findProcesses(size_t *activeProcesses)
 {
@@ -167,16 +217,17 @@ WorkerLauncher argParser(int argc, char** argv)
 {
 	int opt = {};
         int n_proc, n_simul, n_time, n_inter = {};
-        while((opt = getopt(argc, argv, "hn:s:t:")) != -1)
+        while((opt = getopt(argc, argv, "hn:s:t:i:")) != -1)
         {
                 switch(opt)
                 {
                         case 'h':
-                                printf("You have called the -%c flag.\nTo use this program you need to supply 3 flags:\n"
+                                printf("You have called the -%c flag.\nTo use this program you need to supply 4 flags:\n"
                                                 "-n proc for how many processes you would like to create\n"
                                                 "-s simul for how many simultaneous processes you would like\n"
-                                                "-t iter for how many iterations you would like\n"
-                                                "ex: oss -n 3 -s 3 -t 8\n\n", opt);
+                                                "-t time for the maximum time you would like your processes to run\n"
+						"-i interval in ms to launch children, added delay so children dont spawn super fast\n"
+                                                "ex: oss -n 3 -s 3 -t 7 -i 100\n\n", opt);
                                 exit(EXIT_SUCCESS);
                         case 'n':
                                 n_proc = atoi(optarg);
