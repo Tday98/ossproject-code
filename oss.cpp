@@ -16,6 +16,7 @@ using namespace std;
  */
 
 const int sh_key = ftok("worker.cpp", 26);
+int shm_id;
 
 struct simClock
 {
@@ -32,6 +33,9 @@ struct PCB
 }
 
 struct PCB processTable[20];
+struct simClock *clock;
+
+void incrementClock();
 
 class WorkerLauncher 
 {
@@ -49,9 +53,10 @@ class WorkerLauncher
 			int ranProcesses {0};
 			while (ranProcesses < n_proc) 
 			{
-				manageSimProcesses();
+				//manageSimProcesses();
+				incrementClock();
 				pid_t childPid = fork();
-
+				
 				if (childPid < 0)
 				{
 					perror("Fork failed");
@@ -93,20 +98,34 @@ class WorkerLauncher
 			int status {};
 			while (!processTable.empty())
 			{
-				pid_t finalChild = waitpid(-1, &status, 0);
-                        	if (finalChild > -1)
+				pid_t child = waitpid(-1, &status, WNOHANG);
+                        	if (!finalChild)
                        		{
                                 	printf("PID: %d has finished with status %d\n", finalChild, status);
-                                	processTable.erase(finalChild);
+                                	// TODO: remove process from processTable
                         	}
 			}
 		}
 
 		void autoShutdown()
 		{
-			if (processTable.
+			if (clock->seconds >= 60)
+			{
+				shmdt(clock);
+				shmctl(shm_id, IPC_RMID, NULL);
+			}
 		}
 };
+
+void incrementClock()
+{
+	clock->nanoseconds += 100000000; // Lets start with a hundred million nanoseconds or 100ms
+	if (clock->nanoseconds >= 1000000000)
+	{
+		clock->seconds += 1;
+		clock->nanoseconds = 0; // move seconds up nanoseconds back to 0
+	}
+}
 
 WorkerLauncher argParser(int argc, char** argv)
 {
@@ -148,14 +167,14 @@ WorkerLauncher argParser(int argc, char** argv)
 
 int main(int argc, char** argv) 
 {
-	int shm_id = shmget(sh_key, sizeof(struct simClock), IPC_CREAT | 0666);
+	shm_id = shmget(sh_key, sizeof(struct simClock), IPC_CREAT | 0666);
 	if (shm_id <= 0)
 	{
 		fprintf(stderr, "Shared memory get failed\n");
 		exit(EXIT_FAILURE);
 	}
 
-	struct simClock *clock = (struct simClock *)shmat(shm_id, 0, 0);
+	clock = (struct simClock *)shmat(shm_id, 0, 0);
 	if (clock <= 0)
 	{
 		fprintf(stderr, "attaching clock to shared memory failed\n");
@@ -169,6 +188,11 @@ int main(int argc, char** argv)
 
 	WorkerLauncher launcher = argParser(argc, argv);
 	launcher.launchProcesses();
+
+	// cleanup shared memory
+	shmdt(clock);
+	shmctl(shm_id, IPC_RMID, NULL);
+
 	return EXIT_SUCCESS;
 }
 
