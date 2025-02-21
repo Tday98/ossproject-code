@@ -16,7 +16,7 @@ using namespace std;
  * Professor: Mark Hauschild
  */
 
-const int sh_key = ftok("worker.cpp", 26);
+const int sh_key = ftok("oss.cpp", 26);
 int shm_id;
 
 struct simulClock
@@ -69,7 +69,7 @@ class WorkerLauncher
 				
 				if (simClock->nanoseconds == 0 || (simClock->nanoseconds >= 500000000 && simClock->nanoseconds < 600000000))
 					printPCB();
-				if (!(simClock->nanoseconds % waitms) && simClock->nanoseconds != previousnano)
+				if (!(simClock->nanoseconds % waitms) && simClock->nanoseconds != previousnano && simClock->nanoseconds > previousnano)
 				{
 					previousnano = simClock->nanoseconds;
 					pid_t childPid = fork();
@@ -88,8 +88,16 @@ class WorkerLauncher
 					}
 				}
 				ranProcesses++;
-				autoShutdown();
+			}
+			size_t activeWorkers {};
+			findProcesses(&activeWorkers);
+			while (activeWorkers > 0)
+			{
+				incrementClock();
+				printPCB();
 				waitProcesses();
+				findProcesses(&activeWorkers);
+				autoShutdown();
 			}
 			autoShutdown();
 		}
@@ -119,17 +127,12 @@ class WorkerLauncher
 		// Function that waits for any leftover processes to finish based on whats left in the process table
 		{
 			int status {};
-			size_t active = 0;
-			findProcesses(&active);
-			while (active > 0)
-			{
-				pid_t child = waitpid(-1, &status, WNOHANG);
-                        	if (child)
-                       		{
-                                	printf("PID: %d has finished with status %d\n", child, status);
-                                	endProcess(&child);	
-                        	}
-			}
+			pid_t child = waitpid(-1, &status, WNOHANG);
+                       	if (child)
+              		{
+                               	printf("PID: %d has finished with status %d\n", child, status);
+                               	endProcess(&child);	
+                        }
 		}
 
 		void autoShutdown()
@@ -139,6 +142,22 @@ class WorkerLauncher
 				shmdt(simClock);
 				shmctl(shm_id, IPC_RMID, NULL);
 				printf("\nTime exceeded, cleaning up and shutting down.\n");
+				exit(EXIT_SUCCESS);
+			}
+			int checker {};
+			for (int i = 0; i < 20; i++)
+			{
+				if (processTable[i].occupied)
+				{
+					checker++;
+				}
+
+			}
+			if (!checker)
+			{
+				shmdt(simClock);
+				shmctl(shm_id, IPC_RMID, NULL);
+				printf("\nAll processes completed, cleaning up and shutting down.\n");
 				exit(EXIT_SUCCESS);
 			}
 		}
@@ -163,7 +182,7 @@ void printPCB()
 {
 	printf("\nOSS PID:%d SysClockS: %d SysclockNano: %d\nProcess Table:\n", getpid(), simClock->seconds, simClock->nanoseconds);
 	printf("Entry\tOccupied\tPID\tStartS\tStartN\n");
-	for (int i = 0; i < 20; i++) printf("%d\t%d\t%d\t%d\t%d", i, processTable[i].occupied, processTable[i].pid, processTable[i].startSeconds, processTable[i].startNano);
+	for (int i = 0; i < 20; i++) printf("%d\t%d\t%d\t%d\t%d\n", i, processTable[i].occupied, processTable[i].pid, processTable[i].startSeconds, processTable[i].startNano);
 }
 
 void generateWorkTime(int n_time, int *wseconds, int *wnanoseconds)
@@ -211,6 +230,7 @@ void incrementClock()
 		simClock->seconds += 1;
 		simClock->nanoseconds = 0; // move seconds up nanoseconds back to 0
 	}
+	//printf("OSS: Clock time -> %d seconds, %d ns\n", simClock->seconds, simClock->nanoseconds);
 }
 
 WorkerLauncher argParser(int argc, char** argv)
