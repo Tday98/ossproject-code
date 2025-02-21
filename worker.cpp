@@ -8,11 +8,14 @@
  * Professor: Mark Hauschild
  */
 
+
+
 int main(int argc, char** argv) 
 {
 		int i;
-		int iteration = atoi(argv[1]);
-		
+		int seconds = atoi(argv[1]);
+		int nanoseconds = atoi(argv[2]);
+
 		if (argc < 2) 
 			return EXIT_FAILURE;
 		

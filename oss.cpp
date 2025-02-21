@@ -5,6 +5,8 @@
 #include<sys/wait.h>
 #include<map>
 #include<string>
+#include<sys/ipc.h>
+#include<sys/shm.h>
 
 using namespace std;
 
@@ -13,17 +15,34 @@ using namespace std;
  * Professor: Mark Hauschild
  */
 
-class UserLauncher 
+const int sh_key = ftok("worker.cpp", 26);
+
+struct simClock
+{
+	int seconds;
+	int nanoseconds;
+}
+
+struct PCB 
+{
+	int occupied;
+	pid_t pid;
+	int startSeconds;
+	int startNano;
+}
+
+struct PCB processTable[20];
+
+class WorkerLauncher 
 {
 	private:
 		int n_proc;
 		int n_simul;
-		int n_iter;
-		map<pid_t, pid_t> processTable;
+		int n_inter;
 	
 	public:
 		// Constructor to build UserLauncher object
-		UserLauncher(int n, int s, int t) : n_proc(n), n_simul(s), n_iter(t) {}
+		WorkerLauncher(int n, int s, int t, int i) : n_proc(n), n_simul(s), n_time(t), n_inter(i) {}
 
 		void launchProcesses() 
 		{
@@ -45,7 +64,8 @@ class UserLauncher
 					exit(EXIT_FAILURE);
 
 				}
-				processTable[childPid] = childPid; // else means that we have a child process so lets push that process into a map so we know how many we have and we will have O(1) access.  
+			      	processTable[ranProcesses].occupied = 1;
+				processTable[ranProcesses].pid = childPid;	
 				ranProcesses++;
 			}
 			waitProcesses();
@@ -58,9 +78,9 @@ class UserLauncher
 			size_t currentSimul = n_simul;
 			while (processTable.size() >= currentSimul)
 			{
-				pid_t finishedChild = waitpid(-1, &status, 0); //waitpid() returns the child pid and status when it finishes!
+				pid_t finishedChild = waitpid(-1, &status, WNOHANG); //waitpid() returns the child pid and status when it finishes!
 				printf("\nPID: %d has finished with status %d\n", finishedChild, status); 
-				processTable.erase(finishedChild);
+				// TODO: remove process from processTable!
 				currentSimul--;
 				if (!currentSimul)
 					break;
@@ -81,12 +101,17 @@ class UserLauncher
                         	}
 			}
 		}
+
+		void autoShutdown()
+		{
+			if (processTable.
+		}
 };
 
-UserLauncher argParser(int argc, char** argv)
+WorkerLauncher argParser(int argc, char** argv)
 {
 	int opt = {};
-        int n_proc, n_simul, n_iter = {};
+        int n_proc, n_simul, n_time n_inter = {};
         while((opt = getopt(argc, argv, "hn:s:t:")) != -1)
         {
                 switch(opt)
@@ -105,8 +130,11 @@ UserLauncher argParser(int argc, char** argv)
                                 n_simul = atoi(optarg);
                                 break;
                         case 't':
-                                n_iter = atoi(optarg);
+                                n_time = atoi(optarg);
                                 break;
+			case 'i':
+				n_inter = atoi(optarg);
+				break;
                         case '?':
                                 // case ? takes out all the incorrect flags and causes the program to fail. This helps protect the program from undefined behavior
                                 fprintf(stderr, "Incorrect flags submitted -%c\n\n", optopt);
@@ -120,7 +148,26 @@ UserLauncher argParser(int argc, char** argv)
 
 int main(int argc, char** argv) 
 {
-	UserLauncher launcher = argParser(argc, argv);
+	int shm_id = shmget(sh_key, sizeof(struct simClock), IPC_CREAT | 0666);
+	if (shm_id <= 0)
+	{
+		fprintf(stderr, "Shared memory get failed\n");
+		exit(EXIT_FAILURE);
+	}
+
+	struct simClock *clock = (struct simClock *)shmat(shm_id, 0, 0);
+	if (clock <= 0)
+	{
+		fprintf(stderr, "attaching clock to shared memory failed\n");
+		exit(EXIT_FAILURE);
+	}
+
+	clock->seconds = 0;
+	clock->nanoseconds = 0;
+
+	printf("Start clock values: %d seconds %d nanoseconds\n\n", clock->seconds, clock->nanoseconds);
+
+	WorkerLauncher launcher = argParser(argc, argv);
 	launcher.launchProcesses();
 	return EXIT_SUCCESS;
 }
