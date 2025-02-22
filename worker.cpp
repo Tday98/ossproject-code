@@ -16,7 +16,7 @@ struct simulClock
 	int nanoseconds;
 };
 
-const int sh_key = ftok("oss.cpp", 26);
+const int sh_key = ftok("key.val", 26);
 
 int main(int argc, char** argv) 
 {

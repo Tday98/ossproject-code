@@ -16,7 +16,7 @@ using namespace std;
  * Professor: Mark Hauschild
  */
 
-const int sh_key = ftok("oss.cpp", 26);
+const int sh_key = ftok("key.val", 26);
 int shm_id;
 
 struct simulClock
@@ -94,7 +94,8 @@ class WorkerLauncher
 			while (activeWorkers > 0)
 			{
 				incrementClock();
-				printPCB();
+			//	if (simClock->nanoseconds == 0 || simClock->nanoseconds == 500000000)
+			//		printPCB();
 				waitProcesses();
 				findProcesses(&activeWorkers);
 				autoShutdown();
