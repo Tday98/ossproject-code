@@ -119,6 +119,7 @@ class WorkerLauncher
 				}
 				if (!currentSimul)
 					break;
+				autoShutdown();
 			}
 		}
 		
@@ -132,6 +133,7 @@ class WorkerLauncher
                                	printf("PID: %d has finished with status %d\n", child, status);
                                	endProcess(&child);	
                         }
+			autoShutdown();
 		}
 
 		void autoShutdown()
@@ -226,7 +228,7 @@ void endProcess(pid_t *child)
 
 void incrementClock()
 {
-	simClock->nanoseconds += 500; // Lets try 0.0005ms
+	simClock->nanoseconds += 1000; // Lets try 0.001ms 0.0005ms was slightly too slow
 	if (simClock->nanoseconds >= 1000000000)
 	{
 		simClock->seconds += 1;
