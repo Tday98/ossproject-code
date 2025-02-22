@@ -61,17 +61,16 @@ class WorkerLauncher
 			int wseconds {};
 			int wnanoseconds {};
 			int waitms = n_inter * 100000;
-			int previousnano {};
+			//int previousnano {};
 			while (ranProcesses < n_proc) 
 			{
 				//manageSimProcesses();
 				incrementClock();
 				
-				if (simClock->nanoseconds == 0 || (simClock->nanoseconds >= 500000000 && simClock->nanoseconds < 600000000))
-					printPCB();
-				if (!(simClock->nanoseconds % waitms) && simClock->nanoseconds != previousnano && simClock->nanoseconds > previousnano)
+				printPCB();
+				if ((simClock->nanoseconds == ((ranProcesses+1) * waitms))) //&& simClock->nanoseconds != previousnano && simClock->nanoseconds > previousnano)
 				{
-					previousnano = simClock->nanoseconds;
+			//		previousnano = simClock->nanoseconds;
 					pid_t childPid = fork();
 					PCB_entry(&childPid);		
 					if (childPid < 0)
@@ -84,18 +83,17 @@ class WorkerLauncher
 						execl("./worker", "worker", to_string(wseconds).c_str(), to_string(wnanoseconds).c_str(), NULL); // execl needs to terminate with NULL pointer
 						perror("execl failed");
 						exit(EXIT_FAILURE);
-
+					
 					}
+					ranProcesses++;
 				}
-				ranProcesses++;
 			}
 			size_t activeWorkers {};
 			findProcesses(&activeWorkers);
 			while (activeWorkers > 0)
 			{
 				incrementClock();
-			//	if (simClock->nanoseconds == 0 || simClock->nanoseconds == 500000000)
-			//		printPCB();
+				printPCB();
 				waitProcesses();
 				findProcesses(&activeWorkers);
 				autoShutdown();
@@ -181,9 +179,12 @@ void PCB_entry(pid_t *child)
 
 void printPCB()
 {
-	printf("\nOSS PID:%d SysClockS: %d SysclockNano: %d\nProcess Table:\n", getpid(), simClock->seconds, simClock->nanoseconds);
-	printf("Entry\tOccupied\tPID\tStartS\tStartN\n");
-	for (int i = 0; i < 20; i++) printf("%d\t%d\t%d\t%d\t%d\n", i, processTable[i].occupied, processTable[i].pid, processTable[i].startSeconds, processTable[i].startNano);
+	if (simClock->nanoseconds == 0 || simClock->nanoseconds == 500000000)
+	{
+		printf("\nOSS PID:%d SysClockS: %d SysclockNano: %d\nProcess Table:\n", getpid(), simClock->seconds, simClock->nanoseconds);
+		printf("Entry\tOccupied\tPID\tStartS\tStartN\n");
+		for (int i = 0; i < 20; i++) printf("%d\t%d\t%d\t%d\t%d\n", i, processTable[i].occupied, processTable[i].pid, processTable[i].startSeconds, processTable[i].startNano);
+	}
 }
 
 void generateWorkTime(int n_time, int *wseconds, int *wnanoseconds)
@@ -225,7 +226,7 @@ void endProcess(pid_t *child)
 
 void incrementClock()
 {
-	simClock->nanoseconds += 100000000; // Lets start with a hundred million nanoseconds or 100ms
+	simClock->nanoseconds += 500; // Lets try 0.0005ms
 	if (simClock->nanoseconds >= 1000000000)
 	{
 		simClock->seconds += 1;

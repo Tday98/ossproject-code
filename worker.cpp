@@ -43,13 +43,13 @@ int main(int argc, char** argv)
 		printf("WORKER PID:%d PPID:%d SysClockS: %d SysclockNano: %d TermTimeS: %d TermTimeNano: %d\n--Just Starting\n", getpid(), getppid(), simClock->seconds, simClock->nanoseconds, wseconds, wnanoseconds);
 		int time = 1;
 		int lastSeconds = simClock->seconds;
-		int lastNanoseconds = simClock->nanoseconds;
+		//int lastNanoseconds = simClock->nanoseconds;
 		while (simClock->seconds < end_secondtime || (simClock->seconds == end_secondtime && simClock->nanoseconds < end_nanotime))
 		{
-			if ((simClock->seconds > lastSeconds || simClock->nanoseconds > lastNanoseconds) && simClock->seconds <= end_secondtime)
+			if (simClock->seconds > lastSeconds && simClock->seconds <= end_secondtime)
 			{
 				lastSeconds = simClock->seconds;
-				lastNanoseconds = simClock->nanoseconds;
+		//		lastNanoseconds = simClock->nanoseconds;
 				printf("WORKER PID:%d PPID:%d SysClockS: %d SysclockNano: %d TermTimeS: %d TermTimeNano: %d\n%d seconds have passed since starting\n", getpid(), getppid(), simClock->seconds, simClock->nanoseconds, wseconds, wnanoseconds, time);
 				time++;
 			}
