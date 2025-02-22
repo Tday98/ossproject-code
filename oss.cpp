@@ -61,16 +61,14 @@ class WorkerLauncher
 			int wseconds {};
 			int wnanoseconds {};
 			int waitms = n_inter * 100000;
-			//int previousnano {};
 			while (ranProcesses < n_proc) 
 			{
-				//manageSimProcesses();
+				manageSimProcesses();
 				incrementClock();
 				
 				printPCB();
 				if ((simClock->nanoseconds == ((ranProcesses+1) * waitms))) //&& simClock->nanoseconds != previousnano && simClock->nanoseconds > previousnano)
 				{
-			//		previousnano = simClock->nanoseconds;
 					pid_t childPid = fork();
 					PCB_entry(&childPid);		
 					if (childPid < 0)
@@ -110,6 +108,8 @@ class WorkerLauncher
 			findProcesses(&active);
 			while (active >= currentSimul)
 			{
+				incrementClock();
+				printPCB();
 				pid_t finishedChild = waitpid(-1, &status, WNOHANG); //waitpid() returns the child pid and status when it finishes!
 				if (finishedChild)
 				{
@@ -182,7 +182,7 @@ void printPCB()
 	if (simClock->nanoseconds == 0 || simClock->nanoseconds == 500000000)
 	{
 		printf("\nOSS PID:%d SysClockS: %d SysclockNano: %d\nProcess Table:\n", getpid(), simClock->seconds, simClock->nanoseconds);
-		printf("Entry\tOccupied\tPID\tStartS\tStartN\n");
+		printf("Entry\tOccupied PID\tStartS\tStartN\n");
 		for (int i = 0; i < 20; i++) printf("%d\t%d\t%d\t%d\t%d\n", i, processTable[i].occupied, processTable[i].pid, processTable[i].startSeconds, processTable[i].startNano);
 	}
 }
