@@ -8,8 +8,9 @@
 #include<sys/ipc.h>
 #include<sys/shm.h>
 #include<random>
+#include<chrono>
 
-using namespace std;
+using namespace std::chrono;
 
 /*
  * Author: Tristan Day CS 4760
@@ -51,13 +52,18 @@ class WorkerLauncher
 		int n_simul;
 		int n_time;
 		int n_inter;
+		steady_clock::time_point start;
 	
 	public:
 		// Constructor to build UserLauncher object
-		WorkerLauncher(int n, int s, int t, int i) : n_proc(n), n_simul(s), n_time(t), n_inter(i) {}
+		WorkerLauncher(int n, int s, int t, int i, steady_clock::time_point start) : n_proc(n), n_simul(s), n_time(t), n_inter(i), start(start) {}
 
 		void launchProcesses() 
 		{
+			/*
+			* launchProcesses launches processes only if it matches the -i value flag by taking the difference of the current time against the last child process launch time.
+			* This assures that processes adhere to the delay value.
+			*/
 			long long currentTime {0};
 			long long lastChildTime {0};
 			int lastChildSeconds {0};
@@ -152,8 +158,12 @@ class WorkerLauncher
 		}
 
 		void autoShutdown()
+		// checks against the real time using the chrono library and if longer than 60 seconds of simulated time has gone by close processes and exit.
 		{
-			if (simClock->seconds >= 60)
+			auto now = steady_clock::now()
+			auto totalTime = duration_cast<seconds>(now - start).count();
+			
+			if (totalTime >= 60)
 			{
 				shmdt(simClock);
 				shmctl(shm_id, IPC_RMID, NULL);
@@ -250,11 +260,11 @@ void incrementClock()
 		simClock->seconds += 1;
 		simClock->nanoseconds = 0; // move seconds up nanoseconds back to 0
 	}
-	//printf("OSS: Clock time -> %d seconds, %d ns\n", simClock->seconds, simClock->nanoseconds);
 }
 
 WorkerLauncher argParser(int argc, char** argv)
 {
+	steady_clock::time_point start = steady_clock::now();
 	int opt = {};
         int n_proc, n_simul, n_time, n_inter = {};
         while((opt = getopt(argc, argv, "hn:s:t:i:")) != -1)
@@ -289,7 +299,7 @@ WorkerLauncher argParser(int argc, char** argv)
         }
         printf("Values acquired: -n %d, -s %d, -t %d, -i %d\n\n", n_proc, n_simul, n_time, n_inter);	
 	
-	return WorkerLauncher(n_proc, n_simul, n_time, n_inter);
+	return WorkerLauncher(n_proc, n_simul, n_time, n_inter, start);
 }
 
 int main(int argc, char** argv) 
