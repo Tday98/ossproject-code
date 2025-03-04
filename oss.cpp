@@ -58,6 +58,7 @@ class WorkerLauncher
 		void launchProcesses() 
 		{
 			int ranProcesses {0};
+			size_t currentProcesses{0};
 			int wseconds {};
 			int wnanoseconds {};
 			int waitms = n_inter * 100000;
@@ -67,7 +68,7 @@ class WorkerLauncher
 				incrementClock();
 				
 				printPCB();
-				if ((simClock->nanoseconds == ((ranProcesses+1) * waitms))) //&& simClock->nanoseconds != previousnano && simClock->nanoseconds > previousnano)
+				if ((simClock->nanoseconds == ((int)(currentProcesses+1) * waitms))) //&& simClock->nanoseconds != previousnano && simClock->nanoseconds > previousnano)
 				{
 					pid_t childPid = fork();
 					PCB_entry(&childPid);		
@@ -83,8 +84,11 @@ class WorkerLauncher
 						exit(EXIT_FAILURE);
 					
 					}
+					findProcesses(&currentProcesses);
+					printf("current number of processes in while block: %ld", currentProcesses);
 					ranProcesses++;
 				}
+				
 			}
 			size_t activeWorkers {};
 			findProcesses(&activeWorkers);
@@ -206,6 +210,7 @@ void generateWorkTime(int n_time, int *wseconds, int *wnanoseconds)
 
 void findProcesses(size_t *activeProcesses)
 {
+	(*activeProcesses) = 0;
 	for (int i = 0; i < 20; i++)
 	{
 		if (processTable[i].occupied)
