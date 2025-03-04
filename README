@@ -4,21 +4,21 @@ Author: Tristan Day
 
 ## Overview
 I use the following Unix/Linux system calls to launch child processes and manage them from a parent process: fork(), execl(), and waitpid().
-I tried an OOP based approach to handle the creating and management of child processes. I have a UserLauncher class that contains 4 private elements.
-This has project has two parts oss.cpp and user.cpp. oss.cpp is the main process of the project whereas user.cpp is the child process.
-A demo call using this project is "./oss -n 7 -s 3 -t 8" which would create 7 processes with a maximum of 3 running simultaneously.
+I tried an OOP based approach to handle the creating and management of child processes. I have a UserLauncher class that contains 5 private elements.
+This has project has two parts oss.cpp and user.cpp. oss.cpp is the main process of the project whereas worker.cpp is the child process.
+A demo call using this project is "./oss -n 12 -s 4 -t 5 -i 100" which would create 12 processes with a maximum of 4 running simultaneously and at least a 100ms delay between processes.
 
 ## UserLauncher
-These elements are n_proc (number processes), n_simul (number simultaneous), n_iter (number iterations), and a map<pid_t, pid_t> processTable. 
-The process table was my way to try to keep track of how many processes are running concurrently.
+These elements are n_proc (number processes), n_simul (number simultaneous), n_time (number time process runs) n_inter (number interval delay), and start (time Userlauncher started). 
+There is also a PCB table and a simulated clock stored in shared memory between OSS process and WORKER process
 
 ### void launchProcesses()
 This function forks of a child process up to n_proc while making function calls to manageSimProcesses(). It has some simple error handling incase of fork failure and execl failure.
-It makes a call with execl() to the user executable passing through the number of iterations as supplied with -t. After a child process is created it is added to the processTable for management purposes.
+It makes a call with execl() to the user executable passing through the amount of time generated to work as supplied with -t and my gerneateWorkTime() function. After a child process is created it is added to the PCB for management purposes.
 
 ### void manageSimProcesses()
 This is my simultaneous process manager. It allows for only the amount of simultaneous processes defined in from the command line arguments and stored in the n_simul variable.
-It utilizes waitpid() so that it can get the child PID when it completes the iterations. The function then erases that PID from the processTable and decrements the number of current simultaneous processes.
+It utilizes waitpid() so that it can get the child PID when it completes the iterations. The function then erases that PID from the processTable and checks how many processes are still active so a new process can be added to the PCB.
 
 ### void waitProcesses()
 This is my catch that I call at the end of my launchProcesses() function. It checks the processTable for any PIDs still left in the set and if there are any it will wait for it to finish so I don't accidently create a zombie process.
@@ -26,11 +26,20 @@ This is my catch that I call at the end of my launchProcesses() function. It che
 ## Global functions
 ### UserLauncher argParser(int argc, char** argv)
 This function just parses the command line arguments using getopt and then creates a UserLauncher object with the user supplied values in -n -s -t.
+### printPCB()
+### generateWorkTime(int n_time, int *wseconds, long long *wnanoseconds)
+generates the time the worker process should run for.
+### findProcesses(size_t *activeProcesses)
+iterates through PCB and finds processes that occupy the table. increments the activeProcesses if it finds an active process.
+### endProcess(pid_t *child)
+### incrementClock()
+increments simulated clock by 0.001ms in cpu cycles. It also takes care of nanosecond rollover into the seconds slot.
 
 ## Issues I've had this far
-I had some issues with my simultaneous process management. I would run my program and it would correctly run up to the number of defined simultaneous processes but then it would kick out a cli prompt and some extra lines of text indicating another process finished.
-After doing some digging I found that what I was encountering was a race condition -> zombie process.
-I was able to finally correct the bug through the correction of my waitProcesses() function.
+The simulated clock was tricky. I'm pretty close on my simulated time. The clock runs about 15-20 seconds slower than real time but I think its close enough for our purposes.
+I had a lot of issues with getting the shared memory to work so I had to create a key.val file to build a proper shared number to attach the shared memory to.
+It took me a long time to get the values to print the way I wanted them to but there is still a lot of issues with how buggy the print statements can be.
+I believe this is mostly due to how the program just runs and the nature of the parent and child processes sharing the terminal screen for output.
 
 ## Next steps
-I want to do more with my processTable I want to design it so that I can get feedback on the state of the process but I will wait to see what the next part of this project assignment is.
+At this point I'm honestly not sure. Probably try to prevent race conditions. Which I didnt notice that much.
