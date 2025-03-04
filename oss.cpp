@@ -15,14 +15,15 @@ using namespace std;
  * Author: Tristan Day CS 4760
  * Professor: Mark Hauschild
  */
-
+const int correctionFactor = 1000000000;
+const int msCorrect = 1000000;
 const int sh_key = ftok("key.val", 26);
 int shm_id;
 
 struct simulClock
 {
 	int seconds;
-	int nanoseconds;
+	long long nanoseconds;
 };
 
 struct PCB 
@@ -30,7 +31,7 @@ struct PCB
 	int occupied;
 	pid_t pid;
 	int startSeconds;
-	int startNano;
+	long long startNano;
 };
 
 struct PCB processTable[20];
@@ -39,7 +40,7 @@ struct simulClock *simClock;
 void incrementClock();
 void findProcesses(size_t *activeProcesses);
 void endProcess(pid_t *child);
-void generateWorkTime(int n_inter, int *wseconds, int *wnanoseconds);
+void generateWorkTime(int n_inter, int *wseconds, long long *wnanoseconds);
 void printPCB();
 void PCB_entry(pid_t *child);
 
@@ -57,18 +58,24 @@ class WorkerLauncher
 
 		void launchProcesses() 
 		{
+			long long currentTime {0};
+			long long lastChildTime {0};
+			int lastChildSeconds {0};
+			long long lastChildNano {0};
 			int ranProcesses {0};
 			size_t currentProcesses{0};
 			int wseconds {};
-			int wnanoseconds {};
-			int waitms = n_inter * 100000;
+			long long wnanoseconds {};
+			int waitms = n_inter * msCorrect;
 			while (ranProcesses < n_proc) 
 			{
 				manageSimProcesses();
 				incrementClock();
 				
 				printPCB();
-				if ((simClock->nanoseconds == ((int)(currentProcesses+1) * waitms))) //&& simClock->nanoseconds != previousnano && simClock->nanoseconds > previousnano)
+				currentTime = (long long)simClock->seconds * correctionFactor + simClock->nanoseconds;
+			       	lastChildTime = lastChildSeconds * correctionFactor + lastChildNano;	
+				if (currentTime - lastChildTime >= waitms)
 				{
 					pid_t childPid = fork();
 					PCB_entry(&childPid);		
@@ -84,8 +91,10 @@ class WorkerLauncher
 						exit(EXIT_FAILURE);
 					
 					}
+					lastChildSeconds = simClock->seconds;
+					lastChildNano = simClock->nanoseconds;
+
 					findProcesses(&currentProcesses);
-					printf("current number of processes in while block: %ld", currentProcesses);
 					ranProcesses++;
 				}
 				
@@ -119,7 +128,9 @@ class WorkerLauncher
 				{
 					printf("\nPID: %d has finished with status %d\n", finishedChild, status); 
 					endProcess(&finishedChild);
-					currentSimul--;
+					
+					active = 0;
+					findProcesses(&active);
 				}
 				if (!currentSimul)
 					break;
@@ -187,18 +198,18 @@ void printPCB()
 {
 	if (simClock->nanoseconds == 0 || simClock->nanoseconds == 500000000)
 	{
-		printf("\nOSS PID:%d SysClockS: %d SysclockNano: %d\nProcess Table:\n", getpid(), simClock->seconds, simClock->nanoseconds);
+		printf("\nOSS PID:%d SysClockS: %d SysclockNano: %lld\nProcess Table:\n", getpid(), simClock->seconds, simClock->nanoseconds);
 		printf("Entry\tOccupied PID\tStartS\tStartN\n");
-		for (int i = 0; i < 20; i++) printf("%d\t%d\t%d\t%d\t%d\n", i, processTable[i].occupied, processTable[i].pid, processTable[i].startSeconds, processTable[i].startNano);
+		for (int i = 0; i < 20; i++) printf("%d\t%d\t%d\t%d\t%lld\n", i, processTable[i].occupied, processTable[i].pid, processTable[i].startSeconds, processTable[i].startNano);
 	}
 }
 
-void generateWorkTime(int n_time, int *wseconds, int *wnanoseconds)
+void generateWorkTime(int n_time, int *wseconds, long long *wnanoseconds)
 {
 	int secmin = 1;
 	int secmax = n_time;
 	int nanomin = 0;
-	int nanomax = 1000000000;
+	long long nanomax = 1000000000;
 
 	random_device rd;
 	mt19937 gen(rd());
@@ -300,7 +311,7 @@ int main(int argc, char** argv)
 	simClock->seconds = 0;
 	simClock->nanoseconds = 0;
 
-	printf("Start clock values: %d seconds %d nanoseconds\n\n", simClock->seconds, simClock->nanoseconds);
+	printf("Start clock values: %d seconds %lld nanoseconds\n\n", simClock->seconds, simClock->nanoseconds);
 
 	WorkerLauncher launcher = argParser(argc, argv);
 	launcher.launchProcesses();

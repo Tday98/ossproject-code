@@ -13,7 +13,7 @@
 struct simulClock
 {
 	int seconds;
-	int nanoseconds;
+	long long nanoseconds;
 };
 
 const int sh_key = ftok("key.val", 26);
@@ -23,7 +23,7 @@ int main(int argc, char** argv)
 		if (argc < 3)
 			return EXIT_FAILURE;
 		int wseconds = atoi(argv[1]);
-		int wnanoseconds = atoi(argv[2]);
+		long long  wnanoseconds = atoi(argv[2]);
 
 		int shm_id = shmget(sh_key, sizeof(struct simulClock), 0666);
 		if (shm_id < 0) 
@@ -40,7 +40,7 @@ int main(int argc, char** argv)
 		}
 		int end_secondtime = simClock->seconds + wseconds;
 		int end_nanotime = wnanoseconds;
-		printf("WORKER PID:%d PPID:%d SysClockS: %d SysclockNano: %d TermTimeS: %d TermTimeNano: %d\n--Just Starting\n", getpid(), getppid(), simClock->seconds, simClock->nanoseconds, wseconds, wnanoseconds);
+		printf("WORKER PID:%d PPID:%d SysClockS: %d SysclockNano: %lld TermTimeS: %d TermTimeNano: %lld\n--Just Starting\n", getpid(), getppid(), simClock->seconds, simClock->nanoseconds, wseconds, wnanoseconds);
 		int time = 1;
 		int lastSeconds = simClock->seconds;
 		//int lastNanoseconds = simClock->nanoseconds;
@@ -50,7 +50,7 @@ int main(int argc, char** argv)
 			{
 				lastSeconds = simClock->seconds;
 		//		lastNanoseconds = simClock->nanoseconds;
-				printf("WORKER PID:%d PPID:%d SysClockS: %d SysclockNano: %d TermTimeS: %d TermTimeNano: %d\n%d seconds have passed since starting\n", getpid(), getppid(), simClock->seconds, simClock->nanoseconds, wseconds, wnanoseconds, time);
+				printf("WORKER PID:%d PPID:%d SysClockS: %d SysclockNano: %lld TermTimeS: %d TermTimeNano: %lld\n%d seconds have passed since starting\n", getpid(), getppid(), simClock->seconds, simClock->nanoseconds, wseconds, wnanoseconds, time);
 				time++;
 			}
 			
