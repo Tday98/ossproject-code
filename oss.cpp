@@ -10,7 +10,7 @@
 #include<random>
 #include<chrono>
 
-using namespace std::chrono;
+using namespace std;
 
 /*
  * Author: Tristan Day CS 4760
@@ -52,11 +52,11 @@ class WorkerLauncher
 		int n_simul;
 		int n_time;
 		int n_inter;
-		steady_clock::time_point start;
+		chrono::steady_clock::time_point start;
 	
 	public:
 		// Constructor to build UserLauncher object
-		WorkerLauncher(int n, int s, int t, int i, steady_clock::time_point start) : n_proc(n), n_simul(s), n_time(t), n_inter(i), start(start) {}
+		WorkerLauncher(int n, int s, int t, int i, chrono::steady_clock::time_point start) : n_proc(n), n_simul(s), n_time(t), n_inter(i), start(start) {}
 
 		void launchProcesses() 
 		{
@@ -160,8 +160,8 @@ class WorkerLauncher
 		void autoShutdown()
 		// checks against the real time using the chrono library and if longer than 60 seconds of simulated time has gone by close processes and exit.
 		{
-			auto now = steady_clock::now()
-			auto totalTime = duration_cast<seconds>(now - start).count();
+			auto now = chrono::steady_clock::now();
+			auto totalTime = chrono::duration_cast<chrono::seconds>(now - start).count();
 			
 			if (totalTime >= 60)
 			{
@@ -264,7 +264,7 @@ void incrementClock()
 
 WorkerLauncher argParser(int argc, char** argv)
 {
-	steady_clock::time_point start = steady_clock::now();
+	chrono::steady_clock::time_point start = chrono::steady_clock::now();
 	int opt = {};
         int n_proc, n_simul, n_time, n_inter = {};
         while((opt = getopt(argc, argv, "hn:s:t:i:")) != -1)
