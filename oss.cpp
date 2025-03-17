@@ -11,6 +11,9 @@
 #include<chrono>
 #include<sys/msg.h>
 #include<cstring>
+#include<signal.h>
+#include<iostream>
+#include<fstream>
 
 using namespace std;
 
@@ -25,6 +28,7 @@ const int correctionFactor = 1000000000;
 const int msCorrect = 1000000;
 const int sh_key = ftok("key.val", 26);
 int shm_id;
+volatile sig_atomic_t flag = 0;
 
 typedef struct msgbuffer {
 	long mtype;
@@ -55,6 +59,8 @@ void endProcess(pid_t *child);
 void generateWorkTime(int n_inter, int *wseconds, long long *wnanoseconds);
 void printPCB();
 void PCB_entry(pid_t *child);
+void interrupt_catch(int sig);
+void logwrite(const char *filename, const char *content);
 
 class WorkerLauncher 
 {
@@ -107,7 +113,6 @@ class WorkerLauncher
 				manageSimProcesses();
 				incrementClock();
 				
-				printPCB();
 				currentTime = (long long)simClock->seconds * correctionFactor + simClock->nanoseconds;
 			       	lastChildTime = lastChildSeconds * correctionFactor + lastChildNano;	
 				if (currentTime - lastChildTime >= waitms)
@@ -191,12 +196,12 @@ class WorkerLauncher
 		{
 			auto now = chrono::steady_clock::now();
 			auto totalTime = chrono::duration_cast<chrono::seconds>(now - start).count();
-			
-			if (totalTime >= 60)
+			signal(SIGINT, interrupt_catch);
+			if (totalTime >= 60 || flag)
 			{
 				shmdt(simClock);
 				shmctl(shm_id, IPC_RMID, NULL);
-				printf("\nTime exceeded, cleaning up and shutting down.\n");
+				printf("\nTime exceeded or CTRL-C submitted cleaning up and shutting down.\n");
 				exit(EXIT_SUCCESS);
 			}
 			int checker {};
@@ -230,6 +235,22 @@ void PCB_entry(pid_t *child)
 			processTable[i].startNano = simClock->nanoseconds;
 			break;
 		}
+	}
+}
+
+void interrupt_catch(int sig)
+{
+	printf("Caught! %d\n", sig);
+	flag = 1;
+}
+
+void logwrite(const char *filename, const char *content)
+{
+	ofstream file (filename);
+	if (file.is_open())
+	{
+		file << content << "\n";
+		file.close();
 	}
 }
 
@@ -283,7 +304,9 @@ void endProcess(pid_t *child)
 
 void incrementClock()
 {
-	simClock->nanoseconds += 1000; // Lets try 0.001ms 0.0005ms was slightly too slow
+	size_t activeProcesses = {};
+	findProcesses(&activeProcesses);
+	simClock->nanoseconds += (250000000 / activeProcesses); // 250ms as per instructions divided by amount of processes in PCB
 	if (simClock->nanoseconds >= 1000000000)
 	{
 		simClock->seconds += 1;
