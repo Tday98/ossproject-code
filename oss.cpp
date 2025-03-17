@@ -16,10 +16,19 @@ using namespace std;
  * Author: Tristan Day CS 4760
  * Professor: Mark Hauschild
  */
+
+#define PERMS 0644
+
 const int correctionFactor = 1000000000;
 const int msCorrect = 1000000;
 const int sh_key = ftok("key.val", 26);
 int shm_id;
+
+typedef struct msgbuffer {
+	long mtype;
+	char strData[100];
+	int intData;
+} msgbuffer;
 
 struct simulClock
 {
@@ -52,11 +61,12 @@ class WorkerLauncher
 		int n_simul;
 		int n_time;
 		int n_inter;
+		const char* f_name;
 		chrono::steady_clock::time_point start;
 	
 	public:
 		// Constructor to build UserLauncher object
-		WorkerLauncher(int n, int s, int t, int i, chrono::steady_clock::time_point start) : n_proc(n), n_simul(s), n_time(t), n_inter(i), start(start) {}
+		WorkerLauncher(int n, int s, int t, int i, chrono::steady_clock::time_point start, const char* f_name) : n_proc(n), n_simul(s), n_time(t), n_inter(i), start(start), f_name(f) {}
 
 		void launchProcesses() 
 		{
@@ -64,6 +74,23 @@ class WorkerLauncher
 			* launchProcesses launches processes only if it matches the -i value flag by taking the difference of the current time against the last child process launch time.
 			* This assures that processes adhere to the delay value.
 			*/
+
+			msgbuffer buf0, buf1;
+        		int msqid;
+        		key_t key;
+        		system("touch msgq.txt");
+        		// get a key for our message queue
+        		if ((key = ftok("msgq.txt", 1)) == -1) {
+                		perror("ftok");
+                		exit(1);
+        		}
+        		// create our message queue
+        		if ((msqid = msgget(key, PERMS | IPC_CREAT)) == -1) {
+                		perror("msgget in parent");
+                		exit(1);
+        		}
+        		printf("Message queue set up\n");
+
 			long long currentTime {0};
 			long long lastChildTime {0};
 			int lastChildSeconds {0};
@@ -267,7 +294,7 @@ WorkerLauncher argParser(int argc, char** argv)
 	chrono::steady_clock::time_point start = chrono::steady_clock::now();
 	int opt = {};
         int n_proc, n_simul, n_time, n_inter = {};
-        while((opt = getopt(argc, argv, "hn:s:t:i:")) != -1)
+        while((opt = getopt(argc, argv, "hn:s:t:i:f:")) != -1)
         {
                 switch(opt)
                 {
@@ -291,6 +318,9 @@ WorkerLauncher argParser(int argc, char** argv)
 			case 'i':
 				n_inter = atoi(optarg);
 				break;
+			case 'f':
+				f_name = atoi(optarg);
+				break;
                         case '?':
                                 // case ? takes out all the incorrect flags and causes the program to fail. This helps protect the program from undefined behavior
                                 fprintf(stderr, "Incorrect flags submitted -%c\n\n", optopt);
@@ -304,6 +334,22 @@ WorkerLauncher argParser(int argc, char** argv)
 
 int main(int argc, char** argv) 
 {
+	msgbuffer buf0, buf1;
+	int msqid;
+	key_t key;
+	system("touch msgq.txt");
+	// get a key for our message queue
+	if ((key = ftok("msgq.txt", 1)) == -1) {
+		perror("ftok");
+		exit(1);
+	}
+	// create our message queue
+	if ((msqid = msgget(key, PERMS | IPC_CREAT)) == -1) {
+		perror("msgget in parent");
+		exit(1);
+	}
+	printf("Message queue set up\n");
+
 	shm_id = shmget(sh_key, sizeof(struct simulClock), IPC_CREAT | 0666);
 	if (shm_id <= 0)
 	{
