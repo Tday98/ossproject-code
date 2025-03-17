@@ -9,6 +9,8 @@
 #include<sys/shm.h>
 #include<random>
 #include<chrono>
+#include<sys/msg.h>
+#include<cstring>
 
 using namespace std;
 
@@ -61,12 +63,12 @@ class WorkerLauncher
 		int n_simul;
 		int n_time;
 		int n_inter;
-		const char* f_name;
+		const char *f_name;
 		chrono::steady_clock::time_point start;
 	
 	public:
 		// Constructor to build UserLauncher object
-		WorkerLauncher(int n, int s, int t, int i, chrono::steady_clock::time_point start, const char* f_name) : n_proc(n), n_simul(s), n_time(t), n_inter(i), start(start), f_name(f) {}
+		WorkerLauncher(int n, int s, int t, int i, const char *f, chrono::steady_clock::time_point start) : n_proc(n), n_simul(s), n_time(t), n_inter(i), f_name(f), start(start) {}
 
 		void launchProcesses() 
 		{
@@ -294,6 +296,7 @@ WorkerLauncher argParser(int argc, char** argv)
 	chrono::steady_clock::time_point start = chrono::steady_clock::now();
 	int opt = {};
         int n_proc, n_simul, n_time, n_inter = {};
+	const char *f_name;
         while((opt = getopt(argc, argv, "hn:s:t:i:f:")) != -1)
         {
                 switch(opt)
@@ -304,7 +307,8 @@ WorkerLauncher argParser(int argc, char** argv)
                                                 "-s simul for how many simultaneous processes you would like\n"
                                                 "-t time for the maximum time you would like your processes to run\n"
 						"-i interval in ms to launch children, added delay so children dont spawn super fast\n"
-                                                "ex: oss -n 3 -s 3 -t 7 -i 100\n\n", opt);
+						"-f file name to store oss logs to.\n"
+                                                "ex: oss -n 3 -s 3 -t 7 -i 100 -f logsfile.txt\n\n", opt);
                                 exit(EXIT_SUCCESS);
                         case 'n':
                                 n_proc = atoi(optarg);
@@ -319,7 +323,7 @@ WorkerLauncher argParser(int argc, char** argv)
 				n_inter = atoi(optarg);
 				break;
 			case 'f':
-				f_name = atoi(optarg);
+				f_name = optarg;
 				break;
                         case '?':
                                 // case ? takes out all the incorrect flags and causes the program to fail. This helps protect the program from undefined behavior
@@ -327,9 +331,9 @@ WorkerLauncher argParser(int argc, char** argv)
                                 exit(EXIT_FAILURE);
                 }
         }
-        printf("Values acquired: -n %d, -s %d, -t %d, -i %d\n\n", n_proc, n_simul, n_time, n_inter);	
+        printf("Values acquired: -n %d, -s %d, -t %d, -i %d -f %s\n\n", n_proc, n_simul, n_time, n_inter, f_name);	
 	
-	return WorkerLauncher(n_proc, n_simul, n_time, n_inter, start);
+	return WorkerLauncher(n_proc, n_simul, n_time, n_inter, f_name, start);
 }
 
 int main(int argc, char** argv) 
