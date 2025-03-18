@@ -155,10 +155,12 @@ class WorkerLauncher
 						strcpy(buf0.strData, "OSS -> Worker do next iteration");
 						buf0.intData = 1;
 						logwrite("OSS: Sending message to worker %d PID %d at time %d;%lld\n", i, childProcessID, simClock->seconds, simClock->nanoseconds);
-						msgsnd(msqid, &buf0, sizeof(msgbuffer) - sizeof(long), 0);
-						processTable[i].messagesSent += 1;
-
-						if (msgrcv(msqid, &buf1, sizeof(msgbuffer) - sizeof(long), getpid(), 0) != -1)
+						if (waitpid(processTable[i].pid, NULL, WNOHANG) == 0)
+						{
+							msgsnd(msqid, &buf0, sizeof(msgbuffer) - sizeof(long), 0);
+							processTable[i].messagesSent += 1;
+						}
+						if (msgrcv(msqid, &buf1, sizeof(msgbuffer) - sizeof(long), buf0.mtype, 0) != -1)
 						{
 							logwrite("OSS: Receiving message from worker %d PID %d at time %d;%lld\n", i, childProcessID, simClock->seconds, simClock->nanoseconds);
 							if (buf1.intData == 2)
@@ -166,6 +168,11 @@ class WorkerLauncher
 								waitProcesses();
 							}	
 						}
+						while (msgrcv(msqid, &buf1, sizeof(msgbuffer) - sizeof(long), buf0.mtype, IPC_NOWAIT) != -1);
+						if (buf1.intData == 2)
+                                                {
+                                                                waitProcesses();
+                                                }
 					}
 				}
 				autoShutdown();	
