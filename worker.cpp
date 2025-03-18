@@ -78,6 +78,7 @@ int main(int argc, char** argv)
 		int i = 0;
 		while (!done)
 		{
+			printf("\n\n in worker while loop !done\n\n");
 			if ( msgrcv(msqid, &buf, sizeof(msgbuffer), getpid(), 0) != -1) {
 				i++;
 				printf("WORKER PID:%d PPID:%d SysClockS: %d SysclockNano: %lld TermTimeS: %d TermTimeNano: %lld\n--%d iteration has passed since it started \n", getpid(), getppid(), simClock->seconds, simClock->nanoseconds, wseconds, wnanoseconds, i);

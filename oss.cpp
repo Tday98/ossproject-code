@@ -119,13 +119,12 @@ class WorkerLauncher
 			int currentChildIndex = 0;
 			while (ranProcesses < n_proc || currentProcesses > 0) 
 			{
-				manageSimProcesses();
 				incrementClock();
 				currentChildIndex = (currentChildIndex + 1) % 20;
 
 				currentTime = (long long)simClock->seconds * correctionFactor + simClock->nanoseconds;
 			       	lastChildTime = lastChildSeconds * correctionFactor + lastChildNano;	
-				
+				manageSimProcesses(&currentChildIndex, &buf0, &buf1);
 				if (currentTime - lastChildTime >= waitms && ranProcesses < n_proc)
 				{
 					pid_t childPid = fork();
@@ -148,6 +147,7 @@ class WorkerLauncher
 					findProcesses(&currentProcesses);
 					ranProcesses++;
 				}
+				printf("Looking for processes PID %d currentChildIndex %d\n\n", processTable[currentChildIndex].pid, currentChildIndex);
 				if (processTable[currentChildIndex].occupied)
 				{
 					pid_t childProcessID = processTable[currentChildIndex].pid;
@@ -155,13 +155,13 @@ class WorkerLauncher
 					buf0.mtype = childProcessID;
 					strcpy(buf0.strData, "OSS -> Worker do next iteration");
 					buf0.intData = 1;
-					logwrite("OSS: Sending message to worker %d PID %d at time %d;%lld", currentChildIndex, childProcessID, simClock->seconds, simClock->nanoseconds);
-					msgsnd(msqid, &buf0, sizeof(buf0) - sizeof(long), 0);
+					logwrite("OSS: Sending message to worker %d PID %d at time %d;%lld\n", currentChildIndex, childProcessID, simClock->seconds, simClock->nanoseconds);
+					msgsnd(msqid, &buf0, sizeof(msgbuffer) - sizeof(long), 0);
 					processTable[currentChildIndex].messagesSent += 1;
 
-					if (msgrcv(msqid, &buf1, sizeof(buf1) - sizeof(long), getpid(), 0) != -1)
+					if (msgrcv(msqid, &buf1, sizeof(msgbuffer) - sizeof(long), getpid(), 0) != -1)
 					{
-						logwrite("OSS: Receiving message from worker %d PID %d at time %d;%lld", currentChildIndex, childProcessID, simClock->seconds, simClock->nanoseconds);
+						logwrite("OSS: Receiving message from worker %d PID %d at time %d;%lld\n", currentChildIndex, childProcessID, simClock->seconds, simClock->nanoseconds);
 						if (buf1.intData == 2)
 						{
 							waitProcesses();
@@ -173,26 +173,39 @@ class WorkerLauncher
 			autoShutdown();
 		}
 	private:
-		void manageSimProcesses()
+		void manageSimProcesses(int *currentChildIndex,msgbuffer *buf0, msgbuffer *buf1)
 		// Function that manages the number of allowed simultaneous processes	
 		{
-			int status {};
 			size_t currentSimul = n_simul;
 			size_t active = 0;
 			findProcesses(&active);
 			while (active >= currentSimul)
 			{
+				*currentChildIndex = (*currentChildIndex + 1) % 20;
 				incrementClock();
 				printPCB();
-				pid_t finishedChild = waitpid(-1, &status, WNOHANG); //waitpid() returns the child pid and status when it finishes!
-				if (finishedChild)
-				{
-					printf("\nPID: %d has finished with status %d\n", finishedChild, status); 
-					endProcess(&finishedChild);
-					
-					active = 0;
-					findProcesses(&active);
-				}
+				//printf("Looking for processes PID %d currentChildIndex %d\n\n", processTable[*currentChildIndex].pid, *currentChildIndex);
+				if (processTable[*currentChildIndex].occupied)
+                                {
+                                        pid_t childProcessID = processTable[*currentChildIndex].pid;
+
+                                        buf0->mtype = childProcessID;
+                                        strcpy(buf0->strData, "OSS -> Worker do next iteration");
+                                        buf0->intData = 1;
+                                        logwrite("OSS: Sending message to worker %d PID %d at time %d;%lld\n", *currentChildIndex, childProcessID, simClock->seconds, simClock->nanoseconds);
+                                        msgsnd(msqid, &buf0, sizeof(msgbuffer) - sizeof(long), 0);
+                                        processTable[*currentChildIndex].messagesSent += 1;
+
+                                        if (msgrcv(msqid, &buf1, sizeof(msgbuffer) - sizeof(long), getpid(), 0) != -1)
+                                        {
+                                                logwrite("OSS: Receiving message from worker %d PID %d at time %d;%lld\n", *currentChildIndex, childProcessID, simClock->seconds, simClock->nanoseconds);
+                                                if (buf1->intData == 2)                                                                               {
+                                                        waitProcesses();
+							active = 0;
+                                                }
+                                        }
+                                }
+				findProcesses(&active);
 				if (!currentSimul)
 					break;
 				autoShutdown();
