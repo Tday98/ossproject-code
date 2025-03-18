@@ -115,14 +115,17 @@ class WorkerLauncher
 			int wseconds {};
 			long long wnanoseconds {};
 			int waitms = n_inter * msCorrect;
-			while (ranProcesses < n_proc) 
+			int activeWorkers = 0;
+			while (ranProcesses < n_proc || currentProcesses > 0) 
 			{
 				manageSimProcesses();
 				incrementClock();
-				
+				int currentChildIndex = (currentChildIndex + 1) % 20;
+
 				currentTime = (long long)simClock->seconds * correctionFactor + simClock->nanoseconds;
 			       	lastChildTime = lastChildSeconds * correctionFactor + lastChildNano;	
-				if (currentTime - lastChildTime >= waitms)
+				
+				if (currentTime - lastChildTime >= waitms && ranProcesses < n_proc)
 				{
 					pid_t childPid = fork();
 					PCB_entry(&childPid);		
@@ -144,17 +147,23 @@ class WorkerLauncher
 					findProcesses(&currentProcesses);
 					ranProcesses++;
 				}
-				
-			}
-			size_t activeWorkers {};
-			findProcesses(&activeWorkers);
-			while (activeWorkers > 0)
-			{
-				incrementClock();
-				printPCB();
-				waitProcesses();
-				findProcesses(&activeWorkers);
-				autoShutdown();
+				if (processTable[currentChildIndex].occupied)
+				{
+					pid_t childProcessID = processTable[currentChildIndex].pid;
+
+					buf0.mtype = childProcessID;
+					strcpy(buf0.strData, "OSS -> Worker do next iteration");
+					buf0.intData = 1;
+
+					msgsnd(msqid, &buf0, sizeof(buf0) - sizeof(long), 0);
+					processTable[currentChildIndex].messagesSent += 1;
+
+					if (msgrcv(msqid, &buf1, sizeof(buf1) - sizeof(long), getpid(), 0) != -1)
+					{
+						// TODO
+					}
+				}
+				autoShutdown();	
 			}
 			autoShutdown();
 		}
@@ -298,10 +307,26 @@ void interrupt_catch(int sig)
 	exit(EXIT_FAILURE);
 }
 
-void logwrite(const char *filename, const char *content)
+void logwrite(const char* format, ...)
 {
+	// Found a variadic function that send output to both screen and log file
 	va_list args;
-	va_start(args,
+	va_start(args, format);
+	
+	// console print
+	vprintf(format, args);
+	
+	// need separate args for log file.
+	va_end(args);
+	va_start(args, format);
+
+	if (logfile)
+	{
+		vfprintf(logfile, format, args);
+		fflush(logfile); // flush out so it writes immediately
+	}
+
+	va_end(args);
 }
 
 void printPCB()
@@ -356,7 +381,13 @@ void incrementClock()
 {
 	size_t activeProcesses = {};
 	findProcesses(&activeProcesses);
-	simClock->nanoseconds += (250000000 / activeProcesses); // 250ms as per instructions divided by amount of processes in PCB
+	if (activeProcesses) 
+	{
+		simClock->nanoseconds += (250000000 / activeProcesses); // 250ms as per instructions divided by amount of processes in PCB
+	} else 
+	{
+		simClock->nanoseconds += 250000000;
+	}
 	if (simClock->nanoseconds >= 1000000000)
 	{
 		simClock->seconds += 1;
