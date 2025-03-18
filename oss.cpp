@@ -116,6 +116,7 @@ class WorkerLauncher
 			int wseconds {};
 			long long wnanoseconds {};
 			int waitms = n_inter * msCorrect;
+			long long lastMessageTime = 0;
 			while (ranProcesses < n_proc || currentProcesses > 0) 
 			{
 				incrementClock();
@@ -145,6 +146,11 @@ class WorkerLauncher
 					findProcesses(&currentProcesses);
 					ranProcesses++;
 				}
+				currentTime = (long long)simClock->seconds * correctionFactor + simClock->nanoseconds;
+
+				if (currentTime - lastMessageTime >= 250000000)
+					lastMessageTime = currentTime;
+
 				for (int i = 0; i < 20; i++)
 				{
 					if (processTable[i].occupied)
@@ -408,7 +414,7 @@ void incrementClock()
 {
 	size_t activeProcesses = {};
 	findProcesses(&activeProcesses);
-	if (activeProcesses) 
+	if (activeProcesses > 0) 
 	{
 		simClock->nanoseconds += (250000000 / activeProcesses); // 250ms as per instructions divided by amount of processes in PCB
 	} else 
