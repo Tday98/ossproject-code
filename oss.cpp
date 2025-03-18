@@ -23,7 +23,7 @@ using namespace std;
  * Professor: Mark Hauschild
  */
 
-#define PERMS 0644
+#define PERMS 0666
 
 const int correctionFactor = 1000000000;
 const int msCorrect = 1000000;
@@ -122,7 +122,7 @@ class WorkerLauncher
 
 				currentTime = (long long)simClock->seconds * correctionFactor + simClock->nanoseconds;
 			       	lastChildTime = lastChildSeconds * correctionFactor + lastChildNano;	
-				manageSimProcesses(&buf0, &buf1);
+				//manageSimProcesses(&buf0, &buf1);
 				if (currentTime - lastChildTime >= waitms && ranProcesses < n_proc)
 				{
 					pid_t childPid = fork();
@@ -155,26 +155,26 @@ class WorkerLauncher
 						strcpy(buf0.strData, "OSS -> Worker do next iteration");
 						buf0.intData = 1;
 						logwrite("OSS: Sending message to worker %d PID %d at time %d;%lld\n", i, childProcessID, simClock->seconds, simClock->nanoseconds);
-						if (waitpid(processTable[i].pid, NULL, WNOHANG) == 0)
+						if (msgsnd(msqid, &buf0, sizeof(msgbuffer) - sizeof(long), 0) == -1)
 						{
-							msgsnd(msqid, &buf0, sizeof(msgbuffer) - sizeof(long), 0);
-							processTable[i].messagesSent += 1;
+							perror("msgsnd in parent");
+							exit(1);
 						}
-						if (msgrcv(msqid, &buf1, sizeof(msgbuffer) - sizeof(long), buf0.mtype, 0) != -1)
+						processTable[i].messagesSent += 1;
+						if (msgrcv(msqid, &buf1, sizeof(msgbuffer) - sizeof(long), childProcessID, 0) == -1)
 						{
-							logwrite("OSS: Receiving message from worker %d PID %d at time %d;%lld\n", i, childProcessID, simClock->seconds, simClock->nanoseconds);
-							if (buf1.intData == 2)
-							{
-								waitProcesses();
-							}	
+							perror("msgrcv in parent");
+							exit(1);
 						}
-						while (msgrcv(msqid, &buf1, sizeof(msgbuffer) - sizeof(long), buf0.mtype, IPC_NOWAIT) != -1);
+						logwrite("OSS: Receiving message to worker %d PID %d at time %d;%lld\n", i, childProcessID, simClock->seconds, simClock->nanoseconds);
 						if (buf1.intData == 2)
                                                 {
-                                                                waitProcesses();
+							logwrite("OSS: Message for process complete triggered\n");
+							waitProcesses();
                                                 }
 					}
 				}
+				//while (msgrcv(msqid, &buf1, sizeof(msgbuffer) - sizeof(long), buf0.mtype, IPC_NOWAIT) != -1);
 				autoShutdown();	
 			}
 			autoShutdown();
@@ -203,13 +203,15 @@ class WorkerLauncher
                                                 logwrite("OSS: Sending message to worker %d PID %d at time %d;%lld\n", i, childProcessID, simClock->seconds, simClock->nanoseconds);
                                                 msgsnd(msqid, &buf0, sizeof(msgbuffer) - sizeof(long), 0);
                                                 processTable[i].messagesSent += 1;
-                                                                                                                                                      if (msgrcv(msqid, &buf1, sizeof(msgbuffer) - sizeof(long), getpid(), 0) != -1)
+                                                if (msgrcv(msqid, &buf1, sizeof(msgbuffer) - sizeof(long), getpid(), 0) != -1)
                                                 {
                                                         logwrite("OSS: Receiving message from worker %d PID %d at time %d;%lld\n", i, childProcessID, simClock->seconds, simClock->nanoseconds);
-                                                        if (buf1->intData == 2)                                                                                {
+                                                        if (buf1->intData == 2)                                                           
+							{
                                                                 waitProcesses();
 								active = 0;
-                                                        }                                                                                             }
+                                                        }                                                                                             
+						}
                                         }
                                 }
 				findProcesses(&active);
