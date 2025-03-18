@@ -116,7 +116,7 @@ class WorkerLauncher
 			int wseconds {};
 			long long wnanoseconds {};
 			int waitms = n_inter * msCorrect;
-			long long lastMessageTime = 0;
+			//long long lastMessageTime = 0;
 			while (ranProcesses < n_proc || currentProcesses > 0) 
 			{
 				incrementClock();
@@ -146,11 +146,10 @@ class WorkerLauncher
 					findProcesses(&currentProcesses);
 					ranProcesses++;
 				}
-				currentTime = (long long)simClock->seconds * correctionFactor + simClock->nanoseconds;
+				//currentTime = (long long)simClock->seconds * correctionFactor + simClock->nanoseconds;
 
-				if (currentTime - lastMessageTime >= 250000000)
-					lastMessageTime = currentTime;
-
+				//if (currentTime - lastMessageTime >= 250000000)
+				//{
 				for (int i = 0; i < 20; i++)
 				{
 					if (processTable[i].occupied)
@@ -167,20 +166,34 @@ class WorkerLauncher
 							exit(1);
 						}
 						processTable[i].messagesSent += 1;
-						if (msgrcv(msqid, &buf1, sizeof(msgbuffer) - sizeof(long), childProcessID, 0) == -1)
-						{
-							perror("msgrcv in parent");
-							exit(1);
-						}
-						logwrite("OSS: Receiving message to worker %d PID %d at time %d;%lld\n", i, childProcessID, simClock->seconds, simClock->nanoseconds);
-						if (buf1.intData == 2)
+					if (msgrcv(msqid, &buf1, sizeof(msgbuffer), getpid(), 0) == -1)
                                                 {
-							logwrite("OSS: Message for process complete triggered\n");
-							waitProcesses();
+                                                        perror("msgrcv in parent");
+                                                        exit(1);
+                                                }
+                                                logwrite("OSS: Receiving message from worker PID %d at time %d;%lld\n", buf0.mtype, simClock->seconds, simClock->nanoseconds);
+                                                if (buf1.intData == 2)
+                                                {
+                                                        logwrite("OSS: Message for process complete triggered\n");
+                                                        waitProcesses();
                                                 }
 					}
 				}
-				//while (msgrcv(msqid, &buf1, sizeof(msgbuffer) - sizeof(long), buf0.mtype, IPC_NOWAIT) != -1);
+				//lastMessageTime = currentTime;
+				//}
+				/*if (msgrcv(msqid, &buf1, sizeof(msgbuffer), getpid(), 0) == -1)
+                                                {
+                                                        perror("msgrcv in parent");
+                                                        exit(1);
+                                                }
+                                                logwrite("OSS: Receiving message from worker PID %d at time %d;%lld\n", buf0.mtype, simClock->seconds, simClock->nanoseconds);
+                                                if (buf1.intData == 2)
+                                                {
+                                                        logwrite("OSS: Message for process complete triggered\n");
+                                                        waitProcesses();
+                                                }*/
+				//while (msgrcv(msqid, &buf1, sizeof(msgbuffer), buf0.mtype, IPC_NOWAIT) != -1)
+					//logwrite("OSS: Receiving message from worker PID %d at time %d;%lld\n", buf0.mtype, simClock->seconds, simClock->nanoseconds);
 				autoShutdown();	
 			}
 			autoShutdown();
@@ -195,7 +208,6 @@ class WorkerLauncher
 			while (active >= currentSimul)
 			{
 				incrementClock();
-				printPCB();
 				//printf("Looking for processes PID %d currentChildIndex %d\n\n", processTable[*currentChildIndex].pid, *currentChildIndex);
 				for (int i = 0; i < 20; i++)
                                 {
@@ -425,6 +437,10 @@ void incrementClock()
 	{
 		simClock->seconds += 1;
 		simClock->nanoseconds = 0; // move seconds up nanoseconds back to 0
+	}
+	if (simClock-> nanoseconds % 500000000 == 0)
+	{
+		printPCB();
 	}
 }
 

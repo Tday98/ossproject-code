@@ -53,11 +53,6 @@ int main(int argc, char** argv)
 
 		printf("Child %d has access to the queue\n",getpid());
 		
-		/*if ( msgrcv(msqid, &buf, sizeof(msgbuffer), getpid(), 0) == -1) {
-			perror("failed to receive message from parent\n");
-			exit(1);
-		}*/	
-
 		if (shm_id < 0) 
 		{
 			fprintf(stderr, "Worker failed shmget\n");
@@ -81,27 +76,29 @@ int main(int argc, char** argv)
 		printf("%lld term seconds; %lld term nanoseconds\n\n", term_seconds, term_nanoseconds);
 		bool done = false;
 		int i = 0;
-		long long lastWorkerMessageTime = simClock->nanoseconds;
+		//long long lastWorkerMessageTime = simClock->nanoseconds;
 		while (!done)
 		{
-			printf("\n\n in worker while loop !done\n\n");
-			if ( msgrcv(msqid, &buf, sizeof(msgbuffer), getppid(), 0) == -1) {
+			//printf("\n\n in worker while loop !done\n\n");
+			if ( msgrcv(msqid, &buf, sizeof(msgbuffer), getpid(), 0) == -1) {
 				perror("msgrcv in parent failed\n");
 				exit(1);
 			}
 				i++;
 				printf("WORKER PID:%d PPID:%d SysClockS: %d SysclockNano: %lld TermTimeS: %d TermTimeNano: %lld\n--%d iteration has passed since it started \n", getpid(), getppid(), simClock->seconds, simClock->nanoseconds, wseconds, wnanoseconds, i);
-				if (simClock->nanoseconds - lastWorkerMessageTime >= 250000000)
-				{
-					lastWorkerMessageTime = simClock->nanoseconds;
-				if (term_seconds <= simClock->seconds) //&& term_nanoseconds <= simClock->nanoseconds) 
+				//if (simClock->nanoseconds - lastWorkerMessageTime >= 250000000)
+				//{
+		//			lastWorkerMessageTime = simClock->nanoseconds;
+				if ((term_seconds < simClock->seconds) || (term_seconds == simClock->seconds && term_nanoseconds <= simClock->nanoseconds))
+				{	
 					done = true;
+				}
 				if (done)
 				{
 					buf.mtype = getppid();
 					buf.intData = 2;
 					strcpy(buf.strData,"Worker process finished\n");
-					printf("\n\nWORKER: IN DONE STATEMENT\n\n");
+					printf("\n\nWORKER %d: IN DONE STATEMENT\n\n", getpid());
 					if (msgsnd(msqid,&buf,sizeof(msgbuffer)-sizeof(long),0) == -1) {
 						perror("msgsnd to parent failed\n");
 						exit(1);
@@ -111,12 +108,12 @@ int main(int argc, char** argv)
 					buf.mtype = getppid();
                                         buf.intData = 1;
                                         strcpy(buf.strData,"Worker process still working\n");
-					printf("\n\nWORKER: IN NOT DONE STATEMENT\n\n");
+					printf("\n\nWORKER %d: IN NOT DONE STATEMENT\n\n", getpid());
                                         if (msgsnd(msqid,&buf,sizeof(msgbuffer)-sizeof(long),0) == -1) {
                                                 perror("msgsnd to parent failed\n");
                                                 exit(1);
                                         }
-				}
+				//}
 			}
 		}
 		printf("WORKER PID:%d PPID:%d SysClockS: %d SysclockNano: %lld TermTimeS: %d TermTimeNano: %lld\n--Terminating after sending message back to oss after %d iterations\n", getpid(), getppid(), simClock->seconds, simClock->nanoseconds, wseconds, wnanoseconds, i);
