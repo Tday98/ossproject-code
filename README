@@ -6,7 +6,7 @@ Author: Tristan Day
 I use the following Unix/Linux system calls to launch child processes and manage them from a parent process: fork(), execl(), and waitpid().
 I tried an OOP based approach to handle the creating and management of child processes. I have a UserLauncher class that contains 5 private elements.
 This has project has two parts oss.cpp and user.cpp. oss.cpp is the main process of the project whereas worker.cpp is the child process.
-A demo call using this project is "./oss -n 12 -s 4 -t 5 -i 100" which would create 12 processes with a maximum of 4 running simultaneously and at least a 100ms delay between processes.
+A demo call using this project is "./oss -n 12 -s 4 -t 5 -i 100 -f logfile.txt" which would create 12 processes with a maximum of 4 running simultaneously and at least a 100ms delay between processes and save data to a file called "logfile.txt".
 
 ## UserLauncher
 These elements are n_proc (number processes), n_simul (number simultaneous), n_time (number time process runs) n_inter (number interval delay), and start (time Userlauncher started). 
@@ -36,10 +36,7 @@ iterates through PCB and finds processes that occupy the table. increments the a
 increments simulated clock by 0.001ms in cpu cycles. It also takes care of nanosecond rollover into the seconds slot.
 
 ## Issues I've had this far
-The simulated clock was tricky. I'm pretty close on my simulated time. The clock runs about 15-20 seconds slower than real time but I think its close enough for our purposes.
-I had a lot of issues with getting the shared memory to work so I had to create a key.val file to build a proper shared number to attach the shared memory to.
-It took me a long time to get the values to print the way I wanted them to but there is still a lot of issues with how buggy the print statements can be.
-I believe this is mostly due to how the program just runs and the nature of the parent and child processes sharing the terminal screen for output.
+Message queue was super frustrating but I finally figured out how to code it. Overall that was the major hurdle thanks to the code I've written from the past two assignments.
 
 ## Next steps
-At this point I'm honestly not sure. Probably try to prevent race conditions. Which I didnt notice that much.
+No idea hopefully something more manageable.
