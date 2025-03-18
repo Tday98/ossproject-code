@@ -3,7 +3,6 @@
 #include<stdio.h>
 #include<stdlib.h>
 #include<sys/wait.h>
-#include<map>
 #include<string>
 #include<sys/ipc.h>
 #include<sys/shm.h>
@@ -14,6 +13,8 @@
 #include<signal.h>
 #include<iostream>
 #include<fstream>
+#include<cstdarg>
+#include<cstdio>
 
 using namespace std;
 
@@ -62,7 +63,7 @@ void generateWorkTime(int n_inter, int *wseconds, long long *wnanoseconds);
 void printPCB();
 void PCB_entry(pid_t *child);
 void interrupt_catch(int sig);
-void logwrite(const char *filename, const char *content);
+void logwrite(const char *format, ...);
 
 class WorkerLauncher 
 {
@@ -115,12 +116,12 @@ class WorkerLauncher
 			int wseconds {};
 			long long wnanoseconds {};
 			int waitms = n_inter * msCorrect;
-			int activeWorkers = 0;
+			int currentChildIndex = 0;
 			while (ranProcesses < n_proc || currentProcesses > 0) 
 			{
 				manageSimProcesses();
 				incrementClock();
-				int currentChildIndex = (currentChildIndex + 1) % 20;
+				currentChildIndex = (currentChildIndex + 1) % 20;
 
 				currentTime = (long long)simClock->seconds * correctionFactor + simClock->nanoseconds;
 			       	lastChildTime = lastChildSeconds * correctionFactor + lastChildNano;	
@@ -154,13 +155,17 @@ class WorkerLauncher
 					buf0.mtype = childProcessID;
 					strcpy(buf0.strData, "OSS -> Worker do next iteration");
 					buf0.intData = 1;
-
+					logwrite("OSS: Sending message to worker %d PID %d at time %d;%lld", currentChildIndex, childProcessID, simClock->seconds, simClock->nanoseconds);
 					msgsnd(msqid, &buf0, sizeof(buf0) - sizeof(long), 0);
 					processTable[currentChildIndex].messagesSent += 1;
 
 					if (msgrcv(msqid, &buf1, sizeof(buf1) - sizeof(long), getpid(), 0) != -1)
 					{
-						// TODO
+						logwrite("OSS: Receiving message from worker %d PID %d at time %d;%lld", currentChildIndex, childProcessID, simClock->seconds, simClock->nanoseconds);
+						if (buf1.intData == 2)
+						{
+							waitProcesses();
+						}	
 					}
 				}
 				autoShutdown();	
@@ -443,7 +448,7 @@ WorkerLauncher argParser(int argc, char** argv)
 int main(int argc, char** argv) 
 {
 	//signal for CTRL-C interrupt
-	signal(SIGINT, interrupt_handler);
+	signal(SIGINT, interrupt_catch);
 
 	shm_id = shmget(sh_key, sizeof(struct simulClock), IPC_CREAT | 0666);
 	if (shm_id <= 0)

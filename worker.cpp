@@ -86,7 +86,7 @@ int main(int argc, char** argv)
 				if (done)
 				{
 					buf.mtype = getppid();
-					buf.intData = getppid();
+					buf.intData = 2;
 					strcpy(buf.strData,"Worker process finished\n");
 
 					if (msgsnd(msqid,&buf,sizeof(msgbuffer)-sizeof(long),0) == -1) {
@@ -96,7 +96,7 @@ int main(int argc, char** argv)
 				} else
 				{
 					buf.mtype = getppid();
-                                        buf.intData = getppid();
+                                        buf.intData = 1;
                                         strcpy(buf.strData,"Worker process still working\n");
 
                                         if (msgsnd(msqid,&buf,sizeof(msgbuffer)-sizeof(long),0) == -1) {
