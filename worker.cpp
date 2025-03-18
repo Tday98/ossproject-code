@@ -86,9 +86,6 @@ int main(int argc, char** argv)
 			}
 				i++;
 				printf("WORKER PID:%d PPID:%d SysClockS: %d SysclockNano: %lld TermTimeS: %d TermTimeNano: %lld\n--%d iteration has passed since it started \n", getpid(), getppid(), simClock->seconds, simClock->nanoseconds, wseconds, wnanoseconds, i);
-				//if (simClock->nanoseconds - lastWorkerMessageTime >= 250000000)
-				//{
-		//			lastWorkerMessageTime = simClock->nanoseconds;
 				if ((term_seconds < simClock->seconds) || (term_seconds == simClock->seconds && term_nanoseconds <= simClock->nanoseconds))
 				{	
 					done = true;
@@ -103,6 +100,9 @@ int main(int argc, char** argv)
 						perror("msgsnd to parent failed\n");
 						exit(1);
 					}
+					printf("\n\nWORKER PID:%d PPID:%d SysClockS: %d SysclockNano: %lld TermTimeS: %d TermTimeNano: %lld\n--Terminating after sending message back to oss after %d iterations\n\n", getpid(), getppid(), simClock->seconds, simClock->nanoseconds, wseconds, wnanoseconds, i);
+					shmdt(simClock);
+					return EXIT_SUCCESS;
 				} else
 				{
 					buf.mtype = getppid();
@@ -113,10 +113,8 @@ int main(int argc, char** argv)
                                                 perror("msgsnd to parent failed\n");
                                                 exit(1);
                                         }
-				//}
-			}
+				}
 		}
-		printf("WORKER PID:%d PPID:%d SysClockS: %d SysclockNano: %lld TermTimeS: %d TermTimeNano: %lld\n--Terminating after sending message back to oss after %d iterations\n", getpid(), getppid(), simClock->seconds, simClock->nanoseconds, wseconds, wnanoseconds, i);
 		shmdt(simClock);
 		return EXIT_SUCCESS;
 }

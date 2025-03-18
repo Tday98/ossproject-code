@@ -123,7 +123,7 @@ class WorkerLauncher
 
 				currentTime = (long long)simClock->seconds * correctionFactor + simClock->nanoseconds;
 			       	lastChildTime = lastChildSeconds * correctionFactor + lastChildNano;	
-				//manageSimProcesses(&buf0, &buf1);
+				manageSimProcesses(&buf0, &buf1);
 				if (currentTime - lastChildTime >= waitms && ranProcesses < n_proc)
 				{
 					pid_t childPid = fork();
@@ -146,10 +146,6 @@ class WorkerLauncher
 					findProcesses(&currentProcesses);
 					ranProcesses++;
 				}
-				//currentTime = (long long)simClock->seconds * correctionFactor + simClock->nanoseconds;
-
-				//if (currentTime - lastMessageTime >= 250000000)
-				//{
 				for (int i = 0; i < 20; i++)
 				{
 					if (processTable[i].occupied)
@@ -179,21 +175,6 @@ class WorkerLauncher
                                                 }
 					}
 				}
-				//lastMessageTime = currentTime;
-				//}
-				/*if (msgrcv(msqid, &buf1, sizeof(msgbuffer), getpid(), 0) == -1)
-                                                {
-                                                        perror("msgrcv in parent");
-                                                        exit(1);
-                                                }
-                                                logwrite("OSS: Receiving message from worker PID %d at time %d;%lld\n", buf0.mtype, simClock->seconds, simClock->nanoseconds);
-                                                if (buf1.intData == 2)
-                                                {
-                                                        logwrite("OSS: Message for process complete triggered\n");
-                                                        waitProcesses();
-                                                }*/
-				//while (msgrcv(msqid, &buf1, sizeof(msgbuffer), buf0.mtype, IPC_NOWAIT) != -1)
-					//logwrite("OSS: Receiving message from worker PID %d at time %d;%lld\n", buf0.mtype, simClock->seconds, simClock->nanoseconds);
 				autoShutdown();	
 			}
 			autoShutdown();
@@ -208,8 +189,7 @@ class WorkerLauncher
 			while (active >= currentSimul)
 			{
 				incrementClock();
-				//printf("Looking for processes PID %d currentChildIndex %d\n\n", processTable[*currentChildIndex].pid, *currentChildIndex);
-				for (int i = 0; i < 20; i++)
+                                for (int i = 0; i < 20; i++)
                                 {
                                         if (processTable[i].occupied)
                                         {
@@ -219,22 +199,30 @@ class WorkerLauncher
                                                 strcpy(buf0->strData, "OSS -> Worker do next iteration");
                                                 buf0->intData = 1;
                                                 logwrite("OSS: Sending message to worker %d PID %d at time %d;%lld\n", i, childProcessID, simClock->seconds, simClock->nanoseconds);
-                                                msgsnd(msqid, &buf0, sizeof(msgbuffer) - sizeof(long), 0);
-                                                processTable[i].messagesSent += 1;
-                                                if (msgrcv(msqid, &buf1, sizeof(msgbuffer) - sizeof(long), getpid(), 0) != -1)
+                                                if (msgsnd(msqid, buf0, sizeof(msgbuffer) - sizeof(long), 0) == -1)
                                                 {
-                                                        logwrite("OSS: Receiving message from worker %d PID %d at time %d;%lld\n", i, childProcessID, simClock->seconds, simClock->nanoseconds);
-                                                        if (buf1->intData == 2)                                                           
-							{
-                                                                waitProcesses();
-								active = 0;
-                                                        }                                                                                             
-						}
+                                                        perror("msgsnd in parent");
+                                                        exit(1);
+                                                }
+                                                processTable[i].messagesSent += 1;
+                                        if (msgrcv(msqid, buf1, sizeof(msgbuffer), getpid(), 0) == -1)
+                                                {
+                                                        perror("msgrcv in parent");
+                                                        exit(1);
+                                                }
+                                                logwrite("OSS: Receiving message from worker PID %d at time %d;%lld\n", buf0->mtype, simClock->seconds, simClock->nanoseconds);
+                                                if (buf1->intData == 2)
+                                                {
+                                                        logwrite("OSS: Message for process complete triggered\n");
+                                                        waitProcesses();
+                                                }
                                         }
                                 }
 				findProcesses(&active);
+				if (active == 0)
+					currentSimul = 0;
 				if (!currentSimul)
-					break;
+					return;
 				autoShutdown();
 			}
 		}
@@ -243,13 +231,13 @@ class WorkerLauncher
 		// Function that waits for any leftover processes to finish based on whats left in the process table
 		{
 			int status {};
-			pid_t child = waitpid(-1, &status, WNOHANG);
+			pid_t child = waitpid(-1, &status, 0);
                        	if (child)
               		{
                                	printf("PID: %d has finished with status %d\n", child, status);
                                	endProcess(&child);	
                         }
-			autoShutdown();
+			//autoShutdown();
 		}
 
 		void autoShutdown()
@@ -270,7 +258,7 @@ class WorkerLauncher
                         			kill(childPid, SIGTERM);
 					}
 				}
-				printf("\nTime exceeded or CTRL-C submitted cleaning up and shutting down.\n");
+				printf("\nTime exceeded cleaning up and shutting down.\n");
 				fclose(logfile);
 				if (msgctl(msqid, IPC_RMID, NULL) == -1)
         			{
@@ -321,14 +309,14 @@ void PCB_entry(pid_t *child)
 
 void interrupt_catch(int sig)
 {
-	fprintf(stderr, "\nOSS: Caught SIGINT, cleaning up processes. %d\n", sig);
+	logwrite("\nOSS: Caught SIGINT, cleaning up processes. SIGNAL:%d\n", sig);
 
 	for (int i = 0; i < 20; i++)
 	{
 		if (processTable[i].occupied)
 		{
 			pid_t childPid = processTable[i].pid;
-			fprintf(stderr, "Killing child PID %d\n", childPid);
+			logwrite("Killing child PID %d\n", childPid);
 			kill(childPid, SIGTERM);
 		}
 	}
