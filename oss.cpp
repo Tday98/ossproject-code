@@ -31,6 +31,8 @@ const int sh_key = ftok("key.val", 26);
 int shm_id;
 static FILE* logfile = nullptr;
 int msqid;
+int totalMessages;
+int totalProcesses;
 
 typedef struct msgbuffer {
 	long mtype;
@@ -64,6 +66,7 @@ void printPCB();
 void PCB_entry(pid_t *child);
 void interrupt_catch(int sig);
 void logwrite(const char *format, ...);
+void finalOutput();
 
 class WorkerLauncher 
 {
@@ -145,6 +148,7 @@ class WorkerLauncher
 
 					findProcesses(&currentProcesses);
 					ranProcesses++;
+					totalProcesses++;
 				}
 				for (int i = 0; i < 20; i++)
 				{
@@ -162,6 +166,7 @@ class WorkerLauncher
 							exit(1);
 						}
 						processTable[i].messagesSent += 1;
+						totalMessages++;
 					if (msgrcv(msqid, &buf1, sizeof(msgbuffer), getpid(), 0) == -1)
                                                 {
                                                         perror("msgrcv in parent");
@@ -259,6 +264,7 @@ class WorkerLauncher
 					}
 				}
 				printf("\nTime exceeded cleaning up and shutting down.\n");
+				finalOutput();
 				fclose(logfile);
 				if (msgctl(msqid, IPC_RMID, NULL) == -1)
         			{
@@ -281,6 +287,7 @@ class WorkerLauncher
 				shmdt(simClock);
 				shmctl(shm_id, IPC_RMID, NULL);
 				printf("\nAll processes completed, cleaning up and shutting down.\n");
+				finalOutput();
 				fclose(logfile);
 				if (msgctl(msqid, IPC_RMID, NULL) == -1)
         			{
@@ -291,6 +298,11 @@ class WorkerLauncher
 			}
 		}
 };
+
+void finalOutput()
+{
+	logwrite("\n\nFinal total sent OSS messages: %d ; Final total Processes: %d\n\n", totalMessages, totalProcesses);
+}
 
 void PCB_entry(pid_t *child)
 {
@@ -331,6 +343,7 @@ void interrupt_catch(int sig)
 	}
 	shmdt(simClock);
 	shmctl(shm_id, IPC_RMID, NULL);
+	finalOutput();
 	fclose(logfile);
 	if (msgctl(msqid, IPC_RMID, NULL) == -1)
 	{
