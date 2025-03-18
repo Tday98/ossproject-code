@@ -158,15 +158,16 @@ class WorkerLauncher
 						msgsnd(msqid, &buf0, sizeof(msgbuffer) - sizeof(long), 0);
 						processTable[i].messagesSent += 1;
 
+						if (msgrcv(msqid, &buf1, sizeof(msgbuffer) - sizeof(long), getpid(), 0) != -1)
+						{
+							logwrite("OSS: Receiving message from worker %d PID %d at time %d;%lld\n", i, childProcessID, simClock->seconds, simClock->nanoseconds);
+							if (buf1.intData == 2)
+							{
+								waitProcesses();
+							}	
+						}
 					}
 				}
-				while (msgrcv(msqid, &buf1, sizeof(buf1) - sizeof(long), getpid(), IPC_NOWAIT) != -1)    
-				{
-					logwrite("OSS: Receiving message from worker %d at time %d;%lld\n", buf1.pid, simClock->seconds, simClock->nanoseconds);
-					if (buf1.intData == 2)
-					{
-                                                logwrite("OSS: Worker %d has finished",endProcess(&buf1.pid);                                                                        }
-                                }
 				autoShutdown();	
 			}
 			autoShutdown();
@@ -195,19 +196,15 @@ class WorkerLauncher
                                                 logwrite("OSS: Sending message to worker %d PID %d at time %d;%lld\n", i, childProcessID, simClock->seconds, simClock->nanoseconds);
                                                 msgsnd(msqid, &buf0, sizeof(msgbuffer) - sizeof(long), 0);
                                                 processTable[i].messagesSent += 1;
-					}
+                                                                                                                                                      if (msgrcv(msqid, &buf1, sizeof(msgbuffer) - sizeof(long), getpid(), 0) != -1)
+                                                {
+                                                        logwrite("OSS: Receiving message from worker %d PID %d at time %d;%lld\n", i, childProcessID, simClock->seconds, simClock->nanoseconds);
+                                                        if (buf1->intData == 2)                                                                                {
+                                                                waitProcesses();
+								active = 0;
+                                                        }                                                                                             }
+                                        }
                                 }
-				while (msgrcv(msqid, &buf1, sizeof(buf1) - sizeof(long), getpid(), IPC_NOWAIT) != -1) 
-				{
-    					logwrite("OSS: Receiving message from worker %d at time %d;%lld\n",
-             				getpid(), simClock->seconds, simClock->nanoseconds);
-
-    					if (buf1->intData == 2) 
-					{
-        					logwrite("OSS: Worker %d has finished.\n", getpid());
-						endProcess(getpid());
-    					}
-				}
 				findProcesses(&active);
 				if (!currentSimul)
 					break;
