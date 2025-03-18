@@ -28,7 +28,8 @@ const int correctionFactor = 1000000000;
 const int msCorrect = 1000000;
 const int sh_key = ftok("key.val", 26);
 int shm_id;
-volatile sig_atomic_t flag = 0;
+static FILE* logfile = nullptr;
+int msqid;
 
 typedef struct msgbuffer {
 	long mtype;
@@ -48,6 +49,7 @@ struct PCB
 	pid_t pid;
 	int startSeconds;
 	long long startNano;
+	int messagesSent;
 };
 
 struct PCB processTable[20];
@@ -82,9 +84,14 @@ class WorkerLauncher
 			* launchProcesses launches processes only if it matches the -i value flag by taking the difference of the current time against the last child process launch time.
 			* This assures that processes adhere to the delay value.
 			*/
+			logfile = fopen(f_name, "w");
+			if (!logfile)
+			{
+				perror("Failed to open log file");
+				exit(EXIT_FAILURE);
+			}
 
 			msgbuffer buf0, buf1;
-        		int msqid;
         		key_t key;
         		system("touch msgq.txt");
         		// get a key for our message queue
@@ -196,12 +203,26 @@ class WorkerLauncher
 		{
 			auto now = chrono::steady_clock::now();
 			auto totalTime = chrono::duration_cast<chrono::seconds>(now - start).count();
-			signal(SIGINT, interrupt_catch);
-			if (totalTime >= 60 || flag)
+			if (totalTime >= 60)
 			{
 				shmdt(simClock);
 				shmctl(shm_id, IPC_RMID, NULL);
+				for (int i = 0; i < 20; i++)
+				{	
+					if (processTable[i].occupied)
+					{
+						pid_t childPid = processTable[i].pid;
+                        			fprintf(stderr, "Killing child PID %d\n", childPid);
+                        			kill(childPid, SIGTERM);
+					}
+				}
 				printf("\nTime exceeded or CTRL-C submitted cleaning up and shutting down.\n");
+				fclose(logfile);
+				if (msgctl(msqid, IPC_RMID, NULL) == -1)
+        			{
+                			perror("msgctl failed in interrupt_catch");
+                			exit(EXIT_FAILURE);
+        			}
 				exit(EXIT_SUCCESS);
 			}
 			int checker {};
@@ -218,6 +239,12 @@ class WorkerLauncher
 				shmdt(simClock);
 				shmctl(shm_id, IPC_RMID, NULL);
 				printf("\nAll processes completed, cleaning up and shutting down.\n");
+				fclose(logfile);
+				if (msgctl(msqid, IPC_RMID, NULL) == -1)
+        			{
+                			perror("msgctl failed in interrupt_catch");
+                			exit(EXIT_FAILURE);
+        			}
 				exit(EXIT_SUCCESS);
 			}
 		}
@@ -240,18 +267,41 @@ void PCB_entry(pid_t *child)
 
 void interrupt_catch(int sig)
 {
-	printf("Caught! %d\n", sig);
-	flag = 1;
+	fprintf(stderr, "\nOSS: Caught SIGINT, cleaning up processes. %d\n", sig);
+
+	for (int i = 0; i < 20; i++)
+	{
+		if (processTable[i].occupied)
+		{
+			pid_t childPid = processTable[i].pid;
+			fprintf(stderr, "Killing child PID %d\n", childPid);
+			kill(childPid, SIGTERM);
+		}
+	}
+
+	//wait for processes to terminate
+	for (int i = 0; i < 20; i++)
+	{
+		if (processTable[i].occupied) 
+		{
+			waitpid(processTable[i].pid, NULL, 0);
+		}
+	}
+	shmdt(simClock);
+	shmctl(shm_id, IPC_RMID, NULL);
+	fclose(logfile);
+	if (msgctl(msqid, IPC_RMID, NULL) == -1)
+	{
+		perror("msgctl failed in interrupt_catch");
+		exit(EXIT_FAILURE);
+	}
+	exit(EXIT_FAILURE);
 }
 
 void logwrite(const char *filename, const char *content)
 {
-	ofstream file (filename);
-	if (file.is_open())
-	{
-		file << content << "\n";
-		file.close();
-	}
+	va_list args;
+	va_start(args,
 }
 
 void printPCB()
@@ -361,21 +411,8 @@ WorkerLauncher argParser(int argc, char** argv)
 
 int main(int argc, char** argv) 
 {
-	msgbuffer buf0, buf1;
-	int msqid;
-	key_t key;
-	system("touch msgq.txt");
-	// get a key for our message queue
-	if ((key = ftok("msgq.txt", 1)) == -1) {
-		perror("ftok");
-		exit(1);
-	}
-	// create our message queue
-	if ((msqid = msgget(key, PERMS | IPC_CREAT)) == -1) {
-		perror("msgget in parent");
-		exit(1);
-	}
-	printf("Message queue set up\n");
+	//signal for CTRL-C interrupt
+	signal(SIGINT, interrupt_handler);
 
 	shm_id = shmget(sh_key, sizeof(struct simulClock), IPC_CREAT | 0666);
 	if (shm_id <= 0)
