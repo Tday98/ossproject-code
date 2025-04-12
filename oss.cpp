@@ -59,7 +59,8 @@ struct PCB
 	int eventWaitSec;
 	int eventWaitNano;
 	int blocked;
-	int priority
+	int priority;
+	int messagesSent;
 };
 
 struct PCB processTable[20];
@@ -355,23 +356,22 @@ void dispatchProcess() {
 	msgbuffer msg;
 	msg.mtype = childPid;
 	msg.intData = timeQuantum;
-	msg.pid = childPid;
 	strcpy(msg.strData, "Message from dispatchProcess");
 
-	if (msgsend(msqid, &msg, sizeof(msgbuffer) - sizeof(long), 0) == -1) {
+	if (msgsnd(msqid, &msg, sizeof(msgbuffer) - sizeof(long), 0) == -1) {
 		perror("OSS: msgsnd dispatchProcess() failed");
 		return;
 	}
 
-	logwrite("OSS: Sent %dns time quantum; PID %d; q%d; %d seconds; %lld nanoseconds\n", quantum, childPid, processTable[index].priority, simClock->seconds, simClock->nanoseconds);
+	logwrite("OSS: Sent %dns time quantum; PID %d; q%d; %d seconds; %lld nanoseconds\n", timeQuantum, childPid, processTable[index].priority, simClock->seconds, simClock->nanoseconds);
 
 	msgbuffer reply;
-	if (msgrcv(msqid, %reply, sizeof(msgbuffer) - sizeof(long), getpid(), 0) == -1) {
+	if (msgrcv(msqid, &reply, sizeof(msgbuffer) - sizeof(long), getpid(), 0) == -1) {
 		perror("OSS: msgrcv failed in dispatchProcess");
 		return;
 	}
 
-	logwrite("OSS: Received message PID: %d; intData: %d\n", reply.pid, reply.intData);
+	logwrite("OSS: Received message PID: %d; intData: %d\n", reply.mtype, reply.intData);
 }
 
 void interrupt_catch(int sig)

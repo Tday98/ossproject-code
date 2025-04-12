@@ -6,6 +6,7 @@
 #include<sys/shm.h>
 #include<sys/msg.h>
 #include<cstring>
+#include<ctime>
 
 /**
  * Author: Tristan Day CS 4760
@@ -75,7 +76,6 @@ int main(int argc, char** argv)
 		}
 		printf("%lld term seconds; %lld term nanoseconds\n\n", term_seconds, term_nanoseconds);
 		bool done = false;
-		int i = 0;
 		while (!done)
 		{
 			if ( msgrcv(msqid, &buf, sizeof(msgbuffer), getpid(), 0) == -1) {
@@ -93,12 +93,11 @@ int main(int argc, char** argv)
 			} else if (outcome < 60) { // 40% chance that full quantum used
 				usedTime = timeQuantum;
 			} else { // 40% chance that we are blocked
-				usedTime = rand() % quantum;
+				usedTime = rand() % timeQuantum;
 			}
 
 			msgbuffer reply;
 			reply.mtype = getppid();
-			reply.pid = getpid();
 			reply.intData = usedTime; // Positive means blocked or used all of it and Negative means that it terminated
 			strcpy(reply.strData, "Response from worker process");
 
