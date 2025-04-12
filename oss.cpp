@@ -136,59 +136,26 @@ class WorkerLauncher
 				currentTime = (long long)simClock->seconds * correctionFactor + simClock->nanoseconds;
 			       	lastChildTime = lastChildSeconds * correctionFactor + lastChildNano;	
 				manageSimProcesses(&buf0, &buf1);
-				if (currentTime - lastChildTime >= waitms && ranProcesses < n_proc)
+				pid_t childPid = fork();
+				PCB_entry(&childPid);
+				if (childPid < 0)
 				{
-					pid_t childPid = fork();
-					PCB_entry(&childPid);		
-					if (childPid < 0)
-					{
-						perror("Fork failed");
-						exit(EXIT_FAILURE);
-					} else if (childPid == 0) // Have process lets execute it 
-					{
-						generateWorkTime(n_time, &wseconds, &wnanoseconds);
-						execl("./worker", "worker", to_string(wseconds).c_str(), to_string(wnanoseconds).c_str(), NULL); // execl needs to terminate with NULL pointer
-						perror("execl failed");
-						exit(EXIT_FAILURE);
-					
-					}
-					lastChildSeconds = simClock->seconds;
-					lastChildNano = simClock->nanoseconds;
-
-					findProcesses(&currentProcesses);
-					ranProcesses++;
-					totalProcesses++;
-				}
-				for (int i = 0; i < 20; i++)
+					perror("Fork failed");
+					exit(EXIT_FAILURE);
+				} else if (childPid == 0) // Have process lets execute it 
 				{
-					if (processTable[i].occupied)
-					{
-						pid_t childProcessID = processTable[i].pid;
-
-						buf0.mtype = childProcessID;
-						strcpy(buf0.strData, "OSS -> Worker do next iteration");
-						buf0.intData = 1;
-						logwrite("OSS: Sending message to worker %d PID %d at time %d;%lld\n", i, childProcessID, simClock->seconds, simClock->nanoseconds);
-						if (msgsnd(msqid, &buf0, sizeof(msgbuffer) - sizeof(long), 0) == -1)
-						{
-							perror("msgsnd in parent");
-							exit(1);
-						}
-						processTable[i].messagesSent += 1;
-						totalMessages++;
-					if (msgrcv(msqid, &buf1, sizeof(msgbuffer), getpid(), 0) == -1)
-                                                {
-                                                        perror("msgrcv in parent");
-                                                        exit(1);
-                                                }
-                                                logwrite("OSS: Receiving message from worker PID %d at time %d;%lld\n", buf0.mtype, simClock->seconds, simClock->nanoseconds);
-                                                if (buf1.intData == 2)
-                                                {
-                                                        logwrite("OSS: Message for process complete triggered\n");
-                                                        waitProcesses();
-                                                }
-					}
+					generateWorkTime(n_time, &wseconds, &wnanoseconds);
+					execl("./worker", "worker", to_string(wseconds).c_str(), to_string(wnanoseconds).c_str(), NULL); // execl needs to terminate with NULL pointer
+					perror("execl failed");
+					exit(EXIT_FAILURE);					
 				}
+				lastChildSeconds = simClock->seconds;
+				lastChildNano = simClock->nanoseconds;
+
+				findProcesses(&currentProcesses);
+				ranProcesses++;
+				totalProcesses++;
+				dispatchProcess();
 				autoShutdown();	
 			}
 			autoShutdown();
@@ -331,23 +298,28 @@ void PCB_entry(pid_t *child)
 	}
 }
 
-void dispatchProcess() {
+void dispatchProcess() 
+{
 	int index = 0;
 	int timeQuantum = 0;
 
-	if (!q0.empty()) {
+	if (!q0.empty()) 
+	{
 		index = q0.front();
 		q0.pop_front();
 		timeQuantum = 10000000; // 10ms because its q0
-	} else if (!q1.empty()) {
+	} else if (!q1.empty()) 
+	{
 		index = q1.front();
 		q1.pop_front();
 		timeQuantum = 20000000; // 20ms because its q2
-	} else if (!q2.empty()) {
+	} else if (!q2.empty()) 
+	{
 		index = q2.front();
 		q2.pop_front();
 		timeQuantum = 40000000;
-	} else {
+	} else 
+	{
 		return;
 	}
 
@@ -358,7 +330,8 @@ void dispatchProcess() {
 	msg.intData = timeQuantum;
 	strcpy(msg.strData, "Message from dispatchProcess");
 
-	if (msgsnd(msqid, &msg, sizeof(msgbuffer) - sizeof(long), 0) == -1) {
+	if (msgsnd(msqid, &msg, sizeof(msgbuffer) - sizeof(long), 0) == -1) 
+	{
 		perror("OSS: msgsnd dispatchProcess() failed");
 		return;
 	}
@@ -366,7 +339,8 @@ void dispatchProcess() {
 	logwrite("OSS: Sent %dns time quantum; PID %d; q%d; %d seconds; %lld nanoseconds\n", timeQuantum, childPid, processTable[index].priority, simClock->seconds, simClock->nanoseconds);
 
 	msgbuffer reply;
-	if (msgrcv(msqid, &reply, sizeof(msgbuffer) - sizeof(long), getpid(), 0) == -1) {
+	if (msgrcv(msqid, &reply, sizeof(msgbuffer) - sizeof(long), getpid(), 0) == -1) 
+	{
 		perror("OSS: msgrcv failed in dispatchProcess");
 		return;
 	}
