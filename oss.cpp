@@ -15,6 +15,7 @@
 #include<fstream>
 #include<cstdarg>
 #include<cstdio>
+#include<deque>
 
 using namespace std;
 
@@ -33,6 +34,7 @@ static FILE* logfile = nullptr;
 int msqid;
 int totalMessages;
 int totalProcesses;
+std::deque<int> q0, q1, q2;
 
 typedef struct msgbuffer {
 	long mtype;
@@ -52,7 +54,12 @@ struct PCB
 	pid_t pid;
 	int startSeconds;
 	long long startNano;
-	int messagesSent;
+	int serviceTimeSeconds;
+	int serviceTimeNano;
+	int eventWaitSec;
+	int eventWaitNano;
+	int blocked;
+	int priority
 };
 
 struct PCB processTable[20];
@@ -64,6 +71,7 @@ void endProcess(pid_t *child);
 void generateWorkTime(int n_inter, int *wseconds, long long *wnanoseconds);
 void printPCB();
 void PCB_entry(pid_t *child);
+void dispatchProcess();
 void interrupt_catch(int sig);
 void logwrite(const char *format, ...);
 void finalOutput();
@@ -314,9 +322,56 @@ void PCB_entry(pid_t *child)
 			processTable[i].pid = (*child);
 			processTable[i].startSeconds = simClock->seconds;
 			processTable[i].startNano = simClock->nanoseconds;
+			q0.push_back(i); // This sets up our MLFQs
+			processTable[i].priority = 0;
+			processTable[i].blocked = 0;
 			break;
 		}
 	}
+}
+
+void dispatchProcess() {
+	int index = 0;
+	int timeQuantum = 0;
+
+	if (!q0.empty()) {
+		index = q0.front();
+		q0.pop_front();
+		timeQuantum = 10000000; // 10ms because its q0
+	} else if (!q1.empty()) {
+		index = q1.front();
+		q1.pop_front();
+		timeQuantum = 20000000; // 20ms because its q2
+	} else if (!q2.empty()) {
+		index = q2.front();
+		q2.pop_front();
+		timeQuantum = 40000000;
+	} else {
+		return;
+	}
+
+	pid_t childPid = processTable[index].pid;
+
+	msgbuffer msg;
+	msg.mtype = childPid;
+	msg.intData = timeQuantum;
+	msg.pid = childPid;
+	strcpy(msg.strData, "Message from dispatchProcess");
+
+	if (msgsend(msqid, &msg, sizeof(msgbuffer) - sizeof(long), 0) == -1) {
+		perror("OSS: msgsnd dispatchProcess() failed");
+		return;
+	}
+
+	logwrite("OSS: Sent %dns time quantum; PID %d; q%d; %d seconds; %lld nanoseconds\n", quantum, childPid, processTable[index].priority, simClock->seconds, simClock->nanoseconds);
+
+	msgbuffer reply;
+	if (msgrcv(msqid, %reply, sizeof(msgbuffer) - sizeof(long), getpid(), 0) == -1) {
+		perror("OSS: msgrcv failed in dispatchProcess");
+		return;
+	}
+
+	logwrite("OSS: Received message PID: %d; intData: %d\n", reply.pid, reply.intData);
 }
 
 void interrupt_catch(int sig)
