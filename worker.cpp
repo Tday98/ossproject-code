@@ -76,45 +76,45 @@ int main(int argc, char** argv)
 		printf("%lld term seconds; %lld term nanoseconds\n\n", term_seconds, term_nanoseconds);
 		bool done = false;
 		int i = 0;
-		//long long lastWorkerMessageTime = simClock->nanoseconds;
 		while (!done)
 		{
-			//printf("\n\n in worker while loop !done\n\n");
 			if ( msgrcv(msqid, &buf, sizeof(msgbuffer), getpid(), 0) == -1) {
 				perror("msgrcv in parent failed\n");
 				exit(1);
 			}
-				i++;
-				printf("WORKER PID:%d PPID:%d SysClockS: %d SysclockNano: %lld TermTimeS: %d TermTimeNano: %lld\n--%d iteration has passed since it started \n", getpid(), getppid(), simClock->seconds, simClock->nanoseconds, wseconds, wnanoseconds, i);
-				if ((term_seconds < simClock->seconds) || (term_seconds == simClock->seconds && term_nanoseconds <= simClock->nanoseconds))
-				{	
-					done = true;
-				}
-				if (done)
-				{
-					buf.mtype = getppid();
-					buf.intData = 2;
-					strcpy(buf.strData,"Worker process finished\n");
-					printf("\n\nWORKER %d: IN DONE STATEMENT\n\n", getpid());
-					if (msgsnd(msqid,&buf,sizeof(msgbuffer)-sizeof(long),0) == -1) {
-						perror("msgsnd to parent failed\n");
-						exit(1);
-					}
-					printf("\n\nWORKER PID:%d PPID:%d SysClockS: %d SysclockNano: %lld TermTimeS: %d TermTimeNano: %lld\n--Terminating after sending message back to oss after %d iterations\n\n", getpid(), getppid(), simClock->seconds, simClock->nanoseconds, wseconds, wnanoseconds, i);
-					shmdt(simClock);
-					return EXIT_SUCCESS;
-				} else
-				{
-					buf.mtype = getppid();
-                                        buf.intData = 1;
-                                        strcpy(buf.strData,"Worker process still working\n");
-					printf("\n\nWORKER %d: IN NOT DONE STATEMENT\n\n", getpid());
-                                        if (msgsnd(msqid,&buf,sizeof(msgbuffer)-sizeof(long),0) == -1) {
-                                                perror("msgsnd to parent failed\n");
-                                                exit(1);
-                                        }
-				}
-		}
+			int timeQuantum = buf.intData;
+
+			srand(getpid() ^ time(NULL)); // This allows worker to seed randomness based on pid and time(NULL)
+			int outcome = rand() % 100;
+			int usedTime = 0;
+
+			if (outcome < 20) { // signal termination
+				usedTime = -(rand() % timeQuantum);
+			} else if (outcome < 60) { // 40% chance that full quantum used
+				usedTime = timeQuantum;
+			} else { // 40% chance that we are blocked
+				usedTime = rand() % quantum;
+			}
+
+			msgbuffer reply;
+			reply.mtype = getppid();
+			reply.pid = getpid();
+			reply.intData = usedTime; // Positive means blocked or used all of it and Negative means that it terminated
+			strcpy(reply.strData, "Response from worker process");
+
+			if (msgsnd(msqid, &reply, sizeof(reply) - sizeof(long), 0) == -1) {
+				perror("Worker: msgsnd failed");
+			}
+
+			if (usedTime < 0) {
+				printf("WORKER: PID %d has terminated due to negative usedTime. \n", getpid());
+				shmdt(simClock);
+				done = true;
+				return EXIT_SUCCESS;
+			}
+			done = true; // TEMPORARY FOR TESTING
+               	}
+		// Just in case
 		shmdt(simClock);
 		return EXIT_SUCCESS;
 }
