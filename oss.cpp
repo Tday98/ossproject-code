@@ -125,8 +125,9 @@ class WorkerLauncher
 			
 			int ranProcesses {0};
 			size_t currentProcesses{0};
-			while (((ranProcesses < n_proc || currentProcesses > 0)) && ranProcesses < 100) 
+			while (((ranProcesses < n_proc || currentProcesses > 0) && totalProcesses < n_proc) && ranProcesses < 100) 
 			{
+				ranProcesses++;
 				pid_t childPid = fork();
 				PCB_entry(&childPid);
 				if (childPid < 0)
@@ -141,10 +142,9 @@ class WorkerLauncher
 				}
 
 				findProcesses(&currentProcesses);
-				ranProcesses++;
 				totalProcesses++;
-				bool dispatched = dispatchProcess();
 				unblock();
+				bool dispatched = dispatchProcess();
 				if (!dispatched)
 				{
 					idleTime += 100000;
@@ -157,6 +157,27 @@ class WorkerLauncher
 				}
 				simClock->nanoseconds += 1000; // simulate OSS overhead
 				autoShutdown();	
+			}
+			while (true)
+			{
+				unblock();
+				bool dispatched = dispatchProcess();
+				if (!dispatched)
+				{
+					idleTime += 100000;
+                                        simClock->nanoseconds += 100000;
+                                        if (simClock->nanoseconds >= 1000000000)
+                                        {
+                                                simClock->seconds += 1;
+                                                simClock->nanoseconds -= 1000000000;
+                                        }
+				}
+				findProcesses(&currentProcesses);
+				if (currentProcesses <= 0) 
+				{
+					break;
+				}
+				autoShutdown();
 			}
 			autoShutdown();
 		}
