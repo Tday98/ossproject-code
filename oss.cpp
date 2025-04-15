@@ -26,6 +26,10 @@ using namespace std;
 
 #define PERMS 0666
 
+int q0count = 0, q1count = 0, q2count = 0;
+long long totalUsedCPUTime = 0;
+long long idleTime = 0;
+long long nextSnapshotTime = 500000000;
 const int correctionFactor = 1000000000;
 const int msCorrect = 1000000;
 const int sh_key = ftok("key.val", 26);
@@ -34,6 +38,7 @@ static FILE* logfile = nullptr;
 int msqid;
 int totalMessages;
 int totalProcesses;
+int logLineCount = 0;
 std::deque<int> q0, q1, q2, qB;
 
 typedef struct msgbuffer {
@@ -72,10 +77,12 @@ void endProcess(pid_t *child);
 void generateWorkTime(int n_inter, int *wseconds, long long *wnanoseconds);
 void printPCB();
 void PCB_entry(pid_t *child);
-void dispatchProcess();
+bool dispatchProcess();
 void interrupt_catch(int sig);
 void logwrite(const char *format, ...);
 void finalOutput();
+void unblock();
+void snapshot();
 
 class WorkerLauncher 
 {
@@ -146,6 +153,21 @@ class WorkerLauncher
 				ranProcesses++;
 				totalProcesses++;
 				dispatchProcess();
+				unblock(); //unblock a process if it is ready
+				
+				bool dispatched = dispatchProcess();
+
+				if (!dispatched)
+				{
+					idleTime += 100000;
+					simClock->nanoseconds += 100000;
+					if (simClock->nanoseconds >= 1000000000) 
+					{
+ 						simClock->seconds += 1;
+						simClock->nanoseconds -= 1000000000;
+					}
+				}
+
 				autoShutdown();	
 			}
 			autoShutdown();
@@ -267,7 +289,20 @@ class WorkerLauncher
 
 void finalOutput()
 {
-	logwrite("\n\nFinal total sent OSS messages: %d ; Final total Processes: %d\n\n", totalMessages, totalProcesses);
+	logwrite("\n=== Final Statistics ===\n");
+    	logwrite("Total CPU Time Used: %lld ns\n", totalUsedCPUTime);
+    	logwrite("Total Idle Time: %lld ns\n", idleTime);
+    	logwrite("Queue 0 Dispatched: %d\n", q0count);
+    	logwrite("Queue 1 Dispatched: %d\n", q1count);
+    	logwrite("Queue 2 Dispatched: %d\n", q2count);
+
+    	long long totalSimTime = ((long long)simClock->seconds * 1000000000LL) + simClock->nanoseconds;
+    	float cpuUtil = 100.0f * totalUsedCPUTime / totalSimTime;
+    	float idleUtil = 100.0f * idleTime / totalSimTime;
+
+    	logwrite("Simulated Runtime: %lld ns\n", totalSimTime);
+    	logwrite("CPU Utilization: %.2f%%\n", cpuUtil);
+    	logwrite("Idle Time Ratio: %.2f%%\n", idleUtil);
 }
 
 void PCB_entry(pid_t *child)
@@ -288,7 +323,28 @@ void PCB_entry(pid_t *child)
 	}
 }
 
-void dispatchProcess() 
+void unblock()
+{
+	for (auto iterator = qB.begin(); iterator != qB.end(); )
+	{
+		int i = *iterator; //give me the value of the iterator
+		if (simClock->seconds > processTable[i].eventWaitSec || (simClock->seconds == processTable[i].eventWaitSec && simClock->nanoseconds >= processTable[i].eventWaitNano))
+		{
+			processTable[i].blocked = 0;
+			processTable[i].priority = 0;
+			q0.push_back(i);
+
+			logwrite("OSS: PID %d unblocked. Now in q0 %d seconds %lld nano\n", processTable[i].pid, simClock->seconds, simClock->nanoseconds);
+
+			iterator = qB.erase(iterator); //this will pull us out of the for loop
+		} else
+		{
+			iterator++; //keep moving through for loop
+		}
+	}
+}
+
+bool dispatchProcess() 
 {
 	int index = 0;
 	int timeQuantum = 0;
@@ -310,7 +366,7 @@ void dispatchProcess()
 		timeQuantum = 40000000;
 	} else 
 	{
-		return;
+		return false;
 	}
 
 	pid_t childPid = processTable[index].pid;
@@ -323,7 +379,7 @@ void dispatchProcess()
 	if (msgsnd(msqid, &msg, sizeof(msgbuffer) - sizeof(long), 0) == -1) 
 	{
 		perror("OSS: msgsnd dispatchProcess() failed");
-		return;
+		return false;
 	}
 
 	logwrite("OSS: Sent %dns time quantum; PID %d; q%d; %d seconds; %lld nanoseconds\n", timeQuantum, childPid, processTable[index].priority, simClock->seconds, simClock->nanoseconds);
@@ -332,16 +388,25 @@ void dispatchProcess()
 	if (msgrcv(msqid, &reply, sizeof(msgbuffer) - sizeof(long), getpid(), 0) == -1) 
 	{
 		perror("OSS: msgrcv failed in dispatchProcess");
-		return;
+		return false;
 	}
 
 	int usedTime = abs(reply.intData);
 	simClock->nanoseconds += usedTime;
+	totalUsedCPUTime += usedTime;
+	if (reply.intData == timeQuantum)
+	{
+		if (processTable[index].priority == 0) q0count++;
+		else if (processTable[index].priority == 1) q1count++;
+		else q2count++;
+	}
+
 	if (simClock->nanoseconds >= 1000000000)
 	{
 		simClock->seconds += simClock->nanoseconds / 1000000000;
 		simClock->nanoseconds %= 1000000000;
 	}
+	snapshot();
 
 	logwrite("OSS: Received message PID: %d; intData: %d\n", reply.mtype, reply.intData);
 
@@ -349,7 +414,7 @@ void dispatchProcess()
 	{
 		logwrite("OSS: PID %d terminated.\n", reply.mtype);
 		endProcess(&(processTable[index].pid));
-		return;
+		return true;
 	}
 
 	if (reply.intData == timeQuantum) 
@@ -378,6 +443,18 @@ void dispatchProcess()
 		qB.push_back(index);
 		logwrite("OSS: PID %d put into qB. Process will be unblocked at %d seconds and %lld nanoseconds.\n", reply.mtype, processTable[index].eventWaitSec, processTable[index].eventWaitNano);
 	}
+	return true;
+}
+
+void snapshot()
+{
+	long long currentTime = ((long long)simClock->seconds * 1000000000LL) + simClock->nanoseconds;
+	if (currentTime >= nextSnapshotTime && logLineCount < 10000)
+	{
+		printPCB();
+		logwrite("Queue Snapshot at %d;%lld — Q0: %lu Q1: %lu Q2: %lu Blocked: %lu\n", simClock->seconds, simClock->nanoseconds, q0.size(), q1.size(), q2.size(), qB.size());
+	}
+	nextSnapshotTime += 500000000;
 }
 
 void interrupt_catch(int sig)
@@ -432,7 +509,7 @@ void logwrite(const char* format, ...)
 		vfprintf(logfile, format, args);
 		fflush(logfile); // flush out so it writes immediately
 	}
-
+	logLineCount++;
 	va_end(args);
 }
 
