@@ -26,7 +26,7 @@ using namespace std;
 
 #define PERMS 0666
 
-int q0count = 0, q1count = 0, q2count = 0;
+int q0count = 0, q1count = 0, q2count = 0, qbcount = 0;
 long long totalUsedCPUTime = 0;
 long long idleTime = 0;
 long long nextSnapshotTime = 500000000;
@@ -186,8 +186,9 @@ class WorkerLauncher
 	private:
 		
 		void autoShutdown()
-		// checks against the real time using the chrono library and if longer than 60 seconds of simulated time has gone by close processes and exit.
+		// checks against the real time using the chrono library and if longer than 3 seconds of simulated time has gone by close processes and exit.
 		{
+			snapshot();
 			auto now = chrono::steady_clock::now();
 			auto totalTime = chrono::duration_cast<chrono::seconds>(now - start).count();
 			if (totalTime >= 3 || logLineCount >= 10000)
@@ -247,6 +248,7 @@ void finalOutput()
     	logwrite("Queue 0 Dispatched: %d\n", q0count);
     	logwrite("Queue 1 Dispatched: %d\n", q1count);
     	logwrite("Queue 2 Dispatched: %d\n", q2count);
+	logwrite("Queue blocked amount: %d\n", qbcount);
 	logwrite("idleTime: %lld\n", idleTime);
 
 }
@@ -262,6 +264,7 @@ void PCB_entry(pid_t *child)
 			processTable[i].startSeconds = simClock->seconds;
 			processTable[i].startNano = simClock->nanoseconds;
 			q0.push_back(i); // This sets up our MLFQs
+			q0count++;
 			processTable[i].priority = 0;
 			processTable[i].blocked = 0;
 			break;
@@ -279,7 +282,7 @@ void unblock()
 			processTable[i].blocked = 0;
 			processTable[i].priority = 0;
 			q0.push_back(i);
-
+			q0count++;
 			logwrite("OSS: PID %d unblocked. Now in q0 %d seconds %lld nano\n", processTable[i].pid, simClock->seconds, simClock->nanoseconds);
 
 			iterator = qB.erase(iterator); //this will pull us out of the for loop
@@ -393,7 +396,7 @@ bool dispatchProcess()
 	} else 
 	{
 		processTable[index].blocked = 1;
-
+		qbcount++;
 		long long blockTime = simClock->nanoseconds + 100000000;
 		processTable[index].eventWaitNano = blockTime % 1000000000;
 		processTable[index].eventWaitSec = simClock->seconds + (blockTime / 1000000000);
@@ -473,12 +476,9 @@ void logwrite(const char* format, ...)
 
 void printPCB()
 {
-	if (simClock->nanoseconds == 0 || simClock->nanoseconds == 500000000)
-	{
 		printf("\nOSS PID:%d SysClockS: %d SysclockNano: %lld\nProcess Table:\n", getpid(), simClock->seconds, simClock->nanoseconds);
 		printf("Entry\tOccupied PID\tStartS\tStartN\n");
 		for (int i = 0; i < 20; i++) printf("%d\t%d\t%d\t%d\t%lld\n", i, processTable[i].occupied, processTable[i].pid, processTable[i].startSeconds, processTable[i].startNano);
-	}
 }
 
 void findProcesses(size_t *activeProcesses)
