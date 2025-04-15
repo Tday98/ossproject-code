@@ -305,6 +305,9 @@ void waitProcesses()
 
 bool dispatchProcess() 
 {
+	/*
+	* This function moves through the queues and sets out the time quantums. Uses the message queues set up from project 3.
+	*/
 	int index = 0;
 	int timeQuantum = 0;
 
