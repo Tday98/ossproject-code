@@ -88,15 +88,12 @@ class WorkerLauncher
 {
 	private:
 		int n_proc;
-		int n_simul;
-		int n_time;
-		int n_inter;
 		const char *f_name;
 		chrono::steady_clock::time_point start;
 	
 	public:
 		// Constructor to build UserLauncher object
-		WorkerLauncher(int n, int s, int t, int i, const char *f, chrono::steady_clock::time_point start) : n_proc(n), n_simul(s), n_time(t), n_inter(i), f_name(f), start(start) {}
+		WorkerLauncher(int n, const char *f, chrono::steady_clock::time_point start) : n_proc(n), f_name(f), start(start) {}
 
 		void launchProcesses() 
 		{
@@ -111,7 +108,6 @@ class WorkerLauncher
 				exit(EXIT_FAILURE);
 			}
 
-			msgbuffer buf0, buf1;
         		key_t key;
         		system("touch msgq.txt");
         		// get a key for our message queue
@@ -128,13 +124,10 @@ class WorkerLauncher
 			
 			int ranProcesses {0};
 			size_t currentProcesses{0};
-			int wseconds {};
-			long long wnanoseconds {};
 			while (ranProcesses < n_proc || currentProcesses > 0) 
 			{
 				//incrementClock();
 
-				manageSimProcesses(&buf0, &buf1);
 				pid_t childPid = fork();
 				PCB_entry(&childPid);
 				if (childPid < 0)
@@ -143,8 +136,7 @@ class WorkerLauncher
 					exit(EXIT_FAILURE);
 				} else if (childPid == 0) // Have process lets execute it 
 				{
-					generateWorkTime(n_time, &wseconds, &wnanoseconds);
-					execl("./worker", "worker", to_string(wseconds).c_str(), to_string(wnanoseconds).c_str(), NULL); // execl needs to terminate with NULL pointer
+					execl("./worker", "worker", NULL); // execl needs to terminate with NULL pointer
 					perror("execl failed");
 					exit(EXIT_FAILURE);					
 				}
@@ -152,11 +144,8 @@ class WorkerLauncher
 				findProcesses(&currentProcesses);
 				ranProcesses++;
 				totalProcesses++;
-				dispatchProcess();
-				unblock(); //unblock a process if it is ready
-				
 				bool dispatched = dispatchProcess();
-
+				unblock();
 				if (!dispatched)
 				{
 					idleTime += 100000;
@@ -167,58 +156,12 @@ class WorkerLauncher
 						simClock->nanoseconds -= 1000000000;
 					}
 				}
-
+				simClock->nanoseconds += 1000; // simulate OSS overhead
 				autoShutdown();	
 			}
 			autoShutdown();
 		}
 	private:
-		void manageSimProcesses(msgbuffer *buf0, msgbuffer *buf1)
-		// Function that manages the number of allowed simultaneous processes	
-		{
-			size_t currentSimul = n_simul;
-			size_t active = 0;
-			findProcesses(&active);
-			while (active >= currentSimul)
-			{
-				//incrementClock();
-                                for (int i = 0; i < 20; i++)
-                                {
-                                        if (processTable[i].occupied)
-                                        {
-                                                pid_t childProcessID = processTable[i].pid;
-
-                                                buf0->mtype = childProcessID;
-                                                strcpy(buf0->strData, "OSS -> Worker do next iteration");
-                                                buf0->intData = 1;
-                                                logwrite("OSS: Sending message to worker %d PID %d at time %d;%lld\n", i, childProcessID, simClock->seconds, simClock->nanoseconds);
-                                                if (msgsnd(msqid, buf0, sizeof(msgbuffer) - sizeof(long), 0) == -1)
-                                                {
-                                                        perror("msgsnd in parent");
-                                                        exit(1);
-                                                }
-                                                processTable[i].messagesSent += 1;
-                                        if (msgrcv(msqid, buf1, sizeof(msgbuffer), getpid(), 0) == -1)
-                                                {
-                                                        perror("msgrcv in parent");
-                                                        exit(1);
-                                                }
-                                                logwrite("OSS: Receiving message from worker PID %d at time %d;%lld\n", buf0->mtype, simClock->seconds, simClock->nanoseconds);
-                                                if (buf1->intData == 2)
-                                                {
-                                                        logwrite("OSS: Message for process complete triggered\n");
-                                                        waitProcesses();
-                                                }
-                                        }
-                                }
-				findProcesses(&active);
-				if (active == 0)
-					currentSimul = 0;
-				if (!currentSimul)
-					return;
-				autoShutdown();
-			}
-		}
 		
 		void waitProcesses()
 		// Function that waits for any leftover processes to finish based on whats left in the process table
@@ -523,21 +466,6 @@ void printPCB()
 	}
 }
 
-void generateWorkTime(int n_time, int *wseconds, long long *wnanoseconds)
-{
-	int secmin = 1;
-	int secmax = n_time;
-	int nanomin = 0;
-	long long nanomax = 1000000000;
-
-	random_device rd;
-	mt19937 gen(rd());
-	uniform_int_distribution<> distribsec(secmin, secmax);
-	uniform_int_distribution<> distribnano(nanomin, nanomax);
-	*wseconds = distribsec(gen);
-	*wnanoseconds = distribnano(gen);
-}
-
 void findProcesses(size_t *activeProcesses)
 {
 	(*activeProcesses) = 0;
@@ -561,59 +489,25 @@ void endProcess(pid_t *child)
 	}
 }
 
-/*void incrementClock()
-{
-	size_t activeProcesses = {};
-	findProcesses(&activeProcesses);
-	if (activeProcesses > 0) 
-	{
-		simClock->nanoseconds += (250000000 / activeProcesses); // 250ms as per instructions divided by amount of processes in PCB
-	} else 
-	{
-		simClock->nanoseconds += 250000000;
-	}
-	if (simClock->nanoseconds >= 1000000000)
-	{
-		simClock->seconds += 1;
-		simClock->nanoseconds = 0; // move seconds up nanoseconds back to 0
-	}
-	if (simClock-> nanoseconds % 500000000 == 0)
-	{
-		printPCB();
-	}
-}*/
-
 WorkerLauncher argParser(int argc, char** argv)
 {
 	chrono::steady_clock::time_point start = chrono::steady_clock::now();
 	int opt = {};
-        int n_proc, n_simul, n_time, n_inter = {};
+        int n_proc = {};
 	const char *f_name;
-        while((opt = getopt(argc, argv, "hn:s:t:i:f:")) != -1)
+        while((opt = getopt(argc, argv, "hn:f:")) != -1)
         {
                 switch(opt)
                 {
                         case 'h':
                                 printf("You have called the -%c flag.\nTo use this program you need to supply 4 flags:\n"
                                                 "-n proc for how many processes you would like to create\n"
-                                                "-s simul for how many simultaneous processes you would like\n"
-                                                "-t time for the maximum time you would like your processes to run\n"
-						"-i interval in ms to launch children, added delay so children dont spawn super fast\n"
 						"-f file name to store oss logs to.\n"
-                                                "ex: oss -n 3 -s 3 -t 7 -i 100 -f logsfile.txt\n\n", opt);
+                                                "ex: oss -n 3 -f logsfile.txt\n\n", opt);
                                 exit(EXIT_SUCCESS);
                         case 'n':
                                 n_proc = atoi(optarg);
                                 break;
-                        case 's':
-                                n_simul = atoi(optarg);
-                                break;
-                        case 't':
-                                n_time = atoi(optarg);
-                                break;
-			case 'i':
-				n_inter = atoi(optarg);
-				break;
 			case 'f':
 				f_name = optarg;
 				break;
@@ -623,9 +517,9 @@ WorkerLauncher argParser(int argc, char** argv)
                                 exit(EXIT_FAILURE);
                 }
         }
-        printf("Values acquired: -n %d, -s %d, -t %d, -i %d -f %s\n\n", n_proc, n_simul, n_time, n_inter, f_name);	
+        printf("Values acquired: -n %d, -f %s\n\n", n_proc, f_name);	
 	
-	return WorkerLauncher(n_proc, n_simul, n_time, n_inter, f_name, start);
+	return WorkerLauncher(n_proc, f_name, start);
 }
 
 int main(int argc, char** argv) 

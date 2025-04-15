@@ -29,11 +29,9 @@ const int sh_key = ftok("key.val", 26);
 
 int main(int argc, char** argv) 
 {
-		if (argc < 3)
+		if (argc < 1)
 			return EXIT_FAILURE;
-		int wseconds = atoi(argv[1]);
-		long long  wnanoseconds = atoi(argv[2]);
-
+		printf ("Argv: %s\n", argv[0]);
 		int shm_id = shmget(sh_key, sizeof(struct simulClock), 0666);
 		msgbuffer buf;
 		buf.mtype = 1;
@@ -66,7 +64,7 @@ int main(int argc, char** argv)
 			fprintf(stderr, "Worker failed shmat");
 			exit(EXIT_FAILURE);
 		}
-		printf("WORKER PID:%d PPID:%d SysClockS: %d SysclockNano: %lld TermTimeS: %d TermTimeNano: %lld\n--Just Starting\n", getpid(), getppid(), simClock->seconds, simClock->nanoseconds, wseconds, wnanoseconds);
+		printf("WORKER PID:%d PPID:%d SysClockS: %d SysclockNano: %lld\n--Just Starting\n", getpid(), getppid(), simClock->seconds, simClock->nanoseconds);
 		bool done = false;
 		while (!done)
 		{
