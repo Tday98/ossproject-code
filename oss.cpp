@@ -188,7 +188,7 @@ class WorkerLauncher
 		{
 			auto now = chrono::steady_clock::now();
 			auto totalTime = chrono::duration_cast<chrono::seconds>(now - start).count();
-			if (totalTime >= 3)
+			if (totalTime >= 3 || logLineCount >= 10000)
 			{
 				shmdt(simClock);
 				shmctl(shm_id, IPC_RMID, NULL);
@@ -201,7 +201,7 @@ class WorkerLauncher
                         			kill(childPid, SIGTERM);
 					}
 				}
-				printf("\nTime exceeded cleaning up and shutting down.\n");
+				printf("\nTime or log file limit exceeded cleaning up and shutting down.\n");
 				finalOutput();
 				fclose(logfile);
 				if (msgctl(msqid, IPC_RMID, NULL) == -1)
