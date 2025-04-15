@@ -67,14 +67,6 @@ int main(int argc, char** argv)
 			exit(EXIT_FAILURE);
 		}
 		printf("WORKER PID:%d PPID:%d SysClockS: %d SysclockNano: %lld TermTimeS: %d TermTimeNano: %lld\n--Just Starting\n", getpid(), getppid(), simClock->seconds, simClock->nanoseconds, wseconds, wnanoseconds);
-		long long term_seconds = simClock->seconds + wseconds;
-		long long term_nanoseconds = simClock->nanoseconds + wnanoseconds;
-		if (term_nanoseconds >= 1000000000)
-		{
-			term_seconds += 1;
-			term_nanoseconds = term_nanoseconds % 1000000000; // should do a rollover correction for nanoseconds...
-		}
-		printf("%lld term seconds; %lld term nanoseconds\n\n", term_seconds, term_nanoseconds);
 		bool done = false;
 		while (!done)
 		{
@@ -108,7 +100,6 @@ int main(int argc, char** argv)
 			if (usedTime < 0) {
 				printf("WORKER: PID %d has terminated due to negative usedTime. \n", getpid());
 				shmdt(simClock);
-				done = true;
 				return EXIT_SUCCESS;
 			}
 			done = true; // TEMPORARY FOR TESTING

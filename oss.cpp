@@ -118,23 +118,15 @@ class WorkerLauncher
                 		exit(1);
         		}
         		printf("Message queue set up\n");
-
-			long long currentTime {0};
-			long long lastChildTime {0};
-			int lastChildSeconds {0};
-			long long lastChildNano {0};
+			
 			int ranProcesses {0};
 			size_t currentProcesses{0};
 			int wseconds {};
 			long long wnanoseconds {};
-			int waitms = n_inter * msCorrect;
-			//long long lastMessageTime = 0;
 			while (ranProcesses < n_proc || currentProcesses > 0) 
 			{
 				incrementClock();
 
-				currentTime = (long long)simClock->seconds * correctionFactor + simClock->nanoseconds;
-			       	lastChildTime = lastChildSeconds * correctionFactor + lastChildNano;	
 				manageSimProcesses(&buf0, &buf1);
 				pid_t childPid = fork();
 				PCB_entry(&childPid);
@@ -149,8 +141,6 @@ class WorkerLauncher
 					perror("execl failed");
 					exit(EXIT_FAILURE);					
 				}
-				lastChildSeconds = simClock->seconds;
-				lastChildNano = simClock->nanoseconds;
 
 				findProcesses(&currentProcesses);
 				ranProcesses++;
