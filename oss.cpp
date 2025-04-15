@@ -75,7 +75,6 @@ struct simulClock *simClock;
 //void incrementClock();
 void findProcesses(size_t *activeProcesses);
 void endProcess(pid_t *child);
-void generateWorkTime(int n_inter, int *wseconds, long long *wnanoseconds);
 void printPCB();
 void PCB_entry(pid_t *child);
 bool dispatchProcess();
