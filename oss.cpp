@@ -144,6 +144,7 @@ class WorkerLauncher
 				findProcesses(&currentProcesses);
 				totalProcesses++;
 				unblock();
+				snapshot();
 				bool dispatched = dispatchProcess();
 				if (!dispatched)
 				{
@@ -160,6 +161,7 @@ class WorkerLauncher
 			}
 			while (true)
 			{
+				snapshot();
 				unblock();
 				bool dispatched = dispatchProcess();
 				if (!dispatched)
@@ -245,14 +247,8 @@ void finalOutput()
     	logwrite("Queue 0 Dispatched: %d\n", q0count);
     	logwrite("Queue 1 Dispatched: %d\n", q1count);
     	logwrite("Queue 2 Dispatched: %d\n", q2count);
+	logwrite("idleTime: %lld\n", idleTime);
 
-    	long long totalSimTime = ((long long)simClock->seconds * 1000000000LL) + simClock->nanoseconds;
-    	float cpuUtil = 100.0f * totalUsedCPUTime / totalSimTime;
-    	float idleUtil = 100.0f * idleTime / totalSimTime;
-
-    	logwrite("Simulated Runtime: %lld ns\n", totalSimTime);
-    	logwrite("CPU Utilization: %.2f%%\n", cpuUtil);
-    	logwrite("Idle Time Ratio: %.2f%%\n", idleUtil);
 }
 
 void PCB_entry(pid_t *child)
@@ -411,7 +407,7 @@ bool dispatchProcess()
 void snapshot()
 {
 	long long currentTime = ((long long)simClock->seconds * 1000000000LL) + simClock->nanoseconds;
-	if (currentTime >= nextSnapshotTime && logLineCount < 10000)
+	if (currentTime >= nextSnapshotTime)
 	{
 		printPCB();
 		logwrite("Queue Snapshot at %d;%lld — Q0: %lu Q1: %lu Q2: %lu Blocked: %lu\n", simClock->seconds, simClock->nanoseconds, q0.size(), q1.size(), q2.size(), qB.size());
