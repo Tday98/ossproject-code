@@ -34,7 +34,7 @@ static FILE* logfile = nullptr;
 int msqid;
 int totalMessages;
 int totalProcesses;
-std::deque<int> q0, q1, q2;
+std::deque<int> q0, q1, q2, qB;
 
 typedef struct msgbuffer {
 	long mtype;
@@ -66,7 +66,7 @@ struct PCB
 struct PCB processTable[20];
 struct simulClock *simClock;
 
-void incrementClock();
+//void incrementClock();
 void findProcesses(size_t *activeProcesses);
 void endProcess(pid_t *child);
 void generateWorkTime(int n_inter, int *wseconds, long long *wnanoseconds);
@@ -125,7 +125,7 @@ class WorkerLauncher
 			long long wnanoseconds {};
 			while (ranProcesses < n_proc || currentProcesses > 0) 
 			{
-				incrementClock();
+				//incrementClock();
 
 				manageSimProcesses(&buf0, &buf1);
 				pid_t childPid = fork();
@@ -159,7 +159,7 @@ class WorkerLauncher
 			findProcesses(&active);
 			while (active >= currentSimul)
 			{
-				incrementClock();
+				//incrementClock();
                                 for (int i = 0; i < 20; i++)
                                 {
                                         if (processTable[i].occupied)
@@ -335,7 +335,49 @@ void dispatchProcess()
 		return;
 	}
 
+	int usedTime = abs(reply.intData);
+	simClock->nanoseconds += usedTime;
+	if (simClock->nanoseconds >= 1000000000)
+	{
+		simClock->seconds += simClock->nanoseconds / 1000000000;
+		simClock->nanoseconds %= 1000000000;
+	}
+
 	logwrite("OSS: Received message PID: %d; intData: %d\n", reply.mtype, reply.intData);
+
+	if (reply.intData < 0)
+	{
+		logwrite("OSS: PID %d terminated.\n", reply.mtype);
+		endProcess(&(processTable[index].pid));
+		return;
+	}
+
+	if (reply.intData == timeQuantum) 
+	{
+		if (processTable[index].priority == 0)
+		{
+			processTable[index].priority = 1;
+			q1.push_back(index);
+		} else if (processTable[index].priority == 1)
+		{
+			processTable[index].priority = 2;
+			q2.push_back(index);
+		} else {
+			q2.push_back(index);
+		}
+
+		logwrite("OSS: PID %d used time quantum. Pushed to q%d.\n", reply.mtype, processTable[index].priority);
+	} else 
+	{
+		processTable[index].blocked = 1;
+
+		long long blockTime = simClock->nanoseconds + 100000000;
+		processTable[index].eventWaitNano = blockTime % 1000000000;
+		processTable[index].eventWaitSec = simClock->seconds + (blockTime / 1000000000);
+
+		qB.push_back(index);
+		logwrite("OSS: PID %d put into qB. Process will be unblocked at %d seconds and %lld nanoseconds.\n", reply.mtype, processTable[index].eventWaitSec, processTable[index].eventWaitNano);
+	}
 }
 
 void interrupt_catch(int sig)
@@ -442,7 +484,7 @@ void endProcess(pid_t *child)
 	}
 }
 
-void incrementClock()
+/*void incrementClock()
 {
 	size_t activeProcesses = {};
 	findProcesses(&activeProcesses);
@@ -462,7 +504,7 @@ void incrementClock()
 	{
 		printPCB();
 	}
-}
+}*/
 
 WorkerLauncher argParser(int argc, char** argv)
 {
