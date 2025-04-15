@@ -43,6 +43,7 @@ std::deque<int> q0, q1, q2, qB;
 
 typedef struct msgbuffer {
 	long mtype;
+	pid_t pid;
 	char strData[100];
 	int intData;
 } msgbuffer;
@@ -124,10 +125,8 @@ class WorkerLauncher
 			
 			int ranProcesses {0};
 			size_t currentProcesses{0};
-			while (ranProcesses < n_proc || currentProcesses > 0) 
+			while (((ranProcesses < n_proc || currentProcesses > 0)) && ranProcesses < 100) 
 			{
-				//incrementClock();
-
 				pid_t childPid = fork();
 				PCB_entry(&childPid);
 				if (childPid < 0)
@@ -163,25 +162,12 @@ class WorkerLauncher
 		}
 	private:
 		
-		void waitProcesses()
-		// Function that waits for any leftover processes to finish based on whats left in the process table
-		{
-			int status {};
-			pid_t child = waitpid(-1, &status, 0);
-                       	if (child)
-              		{
-                               	printf("PID: %d has finished with status %d\n", child, status);
-                               	endProcess(&child);	
-                        }
-			//autoShutdown();
-		}
-
 		void autoShutdown()
 		// checks against the real time using the chrono library and if longer than 60 seconds of simulated time has gone by close processes and exit.
 		{
 			auto now = chrono::steady_clock::now();
 			auto totalTime = chrono::duration_cast<chrono::seconds>(now - start).count();
-			if (totalTime >= 60)
+			if (totalTime >= 3)
 			{
 				shmdt(simClock);
 				shmctl(shm_id, IPC_RMID, NULL);
@@ -287,6 +273,17 @@ void unblock()
 	}
 }
 
+void waitProcesses()
+{
+	int status {};
+	pid_t child = waitpid(-1, &status, 0);
+	if (child)
+	{
+		printf("PID: %d has finished with status %d\n", child, status);
+		endProcess(&child);	
+	}
+}
+
 bool dispatchProcess() 
 {
 	int index = 0;
@@ -316,6 +313,7 @@ bool dispatchProcess()
 
 	msgbuffer msg;
 	msg.mtype = childPid;
+	msg.pid = getpid();
 	msg.intData = timeQuantum;
 	strcpy(msg.strData, "Message from dispatchProcess");
 
@@ -351,12 +349,12 @@ bool dispatchProcess()
 	}
 	snapshot();
 
-	logwrite("OSS: Received message PID: %d; intData: %d\n", reply.mtype, reply.intData);
+	logwrite("OSS: Received message PID: %d; intData: %d\n", reply.pid, reply.intData);
 
 	if (reply.intData < 0)
 	{
 		logwrite("OSS: PID %d terminated.\n", reply.mtype);
-		endProcess(&(processTable[index].pid));
+		waitProcesses();
 		return true;
 	}
 
@@ -374,7 +372,7 @@ bool dispatchProcess()
 			q2.push_back(index);
 		}
 
-		logwrite("OSS: PID %d used time quantum. Pushed to q%d.\n", reply.mtype, processTable[index].priority);
+		logwrite("OSS: PID %d used time quantum. Pushed to q%d.\n", reply.pid, processTable[index].priority);
 	} else 
 	{
 		processTable[index].blocked = 1;
@@ -384,7 +382,7 @@ bool dispatchProcess()
 		processTable[index].eventWaitSec = simClock->seconds + (blockTime / 1000000000);
 
 		qB.push_back(index);
-		logwrite("OSS: PID %d put into qB. Process will be unblocked at %d seconds and %lld nanoseconds.\n", reply.mtype, processTable[index].eventWaitSec, processTable[index].eventWaitNano);
+		logwrite("OSS: PID %d put into qB. Process will be unblocked at %d seconds and %lld nanoseconds.\n", reply.pid, processTable[index].eventWaitSec, processTable[index].eventWaitNano);
 	}
 	return true;
 }

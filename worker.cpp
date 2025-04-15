@@ -15,6 +15,7 @@
 #define PERMS 0666
 typedef struct msgbuffer {
 	long mtype;
+	pid_t pid;
 	char strData[100];
 	int intData;
 } msgbuffer;
@@ -88,6 +89,7 @@ int main(int argc, char** argv)
 
 			msgbuffer reply;
 			reply.mtype = getppid();
+			reply.pid = getpid();
 			reply.intData = usedTime; // Positive means blocked or used all of it and Negative means that it terminated
 			strcpy(reply.strData, "Response from worker process");
 
@@ -100,7 +102,6 @@ int main(int argc, char** argv)
 				shmdt(simClock);
 				return EXIT_SUCCESS;
 			}
-			done = true; // TEMPORARY FOR TESTING
                	}
 		// Just in case
 		shmdt(simClock);
