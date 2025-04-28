@@ -30,11 +30,11 @@ using namespace std;
 
 typedef struct msgbuffer 
 {
-	long mtype;
-	pid_t pid;
-	int msg;
-	int resourceID;
-	int units;
+	long mtype; // parent PID
+	pid_t pid; // child PID
+	int msg; // request, release or terminate
+	int resourceID; // which resource
+	int units; // how many resources
 } msgbuffer;
 
 struct simClock
@@ -140,6 +140,18 @@ void logwrite(const char* format, ...)
 	va_end(args);
 }
 
+int findPCBIndex(int pid)
+{
+        for (int i = 0; i < 20; i++)
+        {
+                if (processTable[i].occupied && processTable[i].pid == pid)
+                {
+                        return i;
+                }
+        }
+        return -1;
+}
+
 int main(int argc, char* argv[]) 
 {
     	signal(SIGINT, interrupt_catch);
@@ -223,7 +235,7 @@ int main(int argc, char* argv[])
 
 		if ((currentSimTime - lastFork) >= (n_inter * 1000000) 
 				&& totalLaunched <= n_proc
-				&& activeProcessCount() <= n_simul) //check that we can fork again n_inter time restraint and that we havent created more processes than requested 
+				&& activeProcesses() <= n_simul) //check that we can fork again n_inter time restraint and that we havent created more processes than requested 
 		{
 			pid_t childPid = fork();
 			if (childPid < 0)
@@ -242,6 +254,28 @@ int main(int argc, char* argv[])
 				totalLaunched++;
 				lastFork = currentSimTime;
 			}
+		}
+
+		msgbuffer buf;
+		if (msgrcv(msqid, &buf, sizeof(buf) - sizeof(long), getpid(), IPC_NOWAIT) > 0) {
+    
+    			int pcbIndex = findPCBIndex(buf.pid);
+			
+			if (pcbIndex == -1) 
+			{
+				perror("Something failed in finding the pcbIndex");
+				exit(EXIT_FAILURE);
+			}
+
+    			if (buf.msg == 0) 
+			{
+        			handleRequest(pcbIndex, buf.resourceID, buf.units);
+    			} else if (buf.msg == 1) 
+			{
+        			handleRelease(pcbIndex, buf.resourceID, buf.units);
+    			} else if (buf.msg == 2) {
+       	 			handleTerminate(pcbIndex);
+    			}
 		}	
 	}
 
