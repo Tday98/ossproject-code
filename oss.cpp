@@ -37,7 +37,7 @@ typedef struct msgbuffer
 	int units;
 } msgbuffer;
 
-struct simulClock
+struct simClock
 {
 	int seconds;
 	long long nanoseconds;
@@ -53,27 +53,30 @@ struct PCB
 
 struct ResourceDescriptor 
 {
-	int total;
-	int available;
+	int totalInstances;
+	int availableInstances;
 	int allocation[20];
 	int request[20];
 };
 
 // Global Values
 
+
 const int MAX_PROCESSES = 20;
 const int NUM_RESOURCES = 5;
 simClock* clockPtr;
 int shm_id;
 int msqid;
-PCB processTable[MAX_PROCESSES];
-ResourceDescriptor resourceTable[NUM_RESOURCES];
+struct PCB processTable[MAX_PROCESSES];
+struct ResourceDescriptor resourceTable[NUM_RESOURCES];
+struct simClock *simClock;
 volatile sig_atomic_t terminateFlag = 0;
 
-static FILE* logfile = nullptr;
+ofstream logfile;
  
 void interrupt_catch(int sig) 
 {
+	printf("%d", sig);
     	terminateFlag = 1;
 }
 
@@ -94,6 +97,18 @@ void PCB_entry(pid_t *child)
 	}
 }
 
+int activeProcesses()
+{
+	int active = 0;
+	for (int i = 0; i < 20; i++)
+	{
+		if (processTable[i].occupied)
+		{
+			active++;
+		}
+	}
+	return active;
+}
 void incrementClock() 
 {
 	clockPtr->nanoseconds += 10000; // 10,000 ns per loop iteration
@@ -117,24 +132,25 @@ void logwrite(const char* format, ...)
 	va_end(args);
 	va_start(args, format);
 
-	if (logfile)
+	if (logfile.is_open())
 	{
-		vfprintf(logfile, format, args);
-		fflush(logfile); // flush out so it writes immediately
+		vfprintf(stdout, format, args);
+		logfile.flush(); // flush out so it writes immediately
 	}
-	logLineCount++;
 	va_end(args);
 }
 
 int main(int argc, char* argv[]) 
 {
     	signal(SIGINT, interrupt_catch);
-	int n_proc = 5;
+	int n_proc = 0;
+	int n_simul = 0;
+	int n_inter = 0;
     	string logfileName = "log.txt";
 
     	// argument parser
     	int opt;
-    	while ((opt = getopt(argc, argv, "hn:f:")) != -1) 
+    	while ((opt = getopt(argc, argv, "hn:s:i:f:")) != -1) 
 	{
         	switch (opt) 
 		{
@@ -144,6 +160,12 @@ int main(int argc, char* argv[])
             	case 'n':
                 	n_proc = atoi(optarg);
                 	break;
+		case 's':
+			n_simul = atoi(optarg);
+			break;
+		case 'i':
+			n_inter = atoi(optarg);
+			break;
             	case 'f':
                 	logfileName = optarg;
                 	break;
@@ -164,8 +186,8 @@ int main(int argc, char* argv[])
 
     	// attach to shared memory with worker
     	key_t key = ftok("oss.cpp", 42);
-    	shm_id = shmget(key, sizeof(simClock), IPC_CREAT | 0666);
-    	clockPtr = (simClock*)shmat(shm_id, nullptr, 0);
+    	shm_id = shmget(key, sizeof(struct simClock), IPC_CREAT | 0666);
+    	clockPtr = (struct simClock *)shmat(shm_id, nullptr, 0);
 	if (simClock <= (void *)0)
 	{
 		fprintf(stderr, "attaching clock to shared memory failed\n");
@@ -195,7 +217,32 @@ int main(int argc, char* argv[])
 
 	while (!terminateFlag) 
 	{
+		incrementClock();
 		
+		long long currentSimTime = (long long)clockPtr->seconds * 1000000000LL + clockPtr->nanoseconds;
+
+		if ((currentSimTime - lastFork) >= (n_inter * 1000000) 
+				&& totalLaunched <= n_proc
+				&& activeProcessCount() <= n_simul) //check that we can fork again n_inter time restraint and that we havent created more processes than requested 
+		{
+			pid_t childPid = fork();
+			if (childPid < 0)
+			{					
+				perror("Fork failed");
+				exit(EXIT_FAILURE);
+			} else if (childPid == 0) // Have process lets execute it 
+			{
+				execl("./worker", "worker", NULL); // execl needs to terminate with NULL pointer
+				perror("execl failed");
+				exit(EXIT_FAILURE);					
+			} else
+			{
+				PCB_entry(&childPid);
+				logwrite("OSS: Forked worker PID %d at %d:%lld\n", childPid, clockPtr->seconds, clockPtr->nanoseconds);
+				totalLaunched++;
+				lastFork = currentSimTime;
+			}
+		}	
 	}
 
     	// cleaing up shared memory
