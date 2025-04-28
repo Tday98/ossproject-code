@@ -26,21 +26,15 @@ using namespace std;
 
 #define PERMS 0666
 
-const int correctionFactor = 1000000000;
-const int msCorrect = 1000000;
-const int sh_key = ftok("key.val", 26);
-int shm_id;
-static FILE* logfile = nullptr;
-int msqid;
-int totalMessages;
-int totalProcesses;
-int logLineCount = 0;
+// Struct definitions
 
-typedef struct msgbuffer {
+typedef struct msgbuffer 
+{
 	long mtype;
 	pid_t pid;
-	char strData[100];
-	int intData;
+	int msg;
+	int resourceID;
+	int units;
 } msgbuffer;
 
 struct simulClock
@@ -55,144 +49,35 @@ struct PCB
 	pid_t pid;
 	int startSeconds;
 	long long startNano;
-	int messagesSent;
 };
 
-struct PCB processTable[20];
-struct simulClock *simClock;
-
-void waitProcesses();
-void findProcesses(size_t *activeProcesses);
-void endProcess(pid_t *child);
-void printPCB();
-void PCB_entry(pid_t *child);
-void interrupt_catch(int sig);
-void logwrite(const char *format, ...);
-void finalOutput();
-
-class WorkerLauncher 
+struct ResourceDescriptor 
 {
-	private:
-		int n_proc;
-		int n_simul;
-		int n_inter;
-		const char *f_name;
-		chrono::steady_clock::time_point start;
-	
-	public:
-		// Constructor to build UserLauncher object
-		WorkerLauncher(int n, int s, int i, const char *f, chrono::steady_clock::time_point start) : n_proc(n), f_name(f), start(start) {}
-
-		void launchProcesses() 
-		{
-			/*
-			* launchProcesses launches processes only if it matches the -i value flag by taking the difference of the current time against the last child process launch time.
-			* This assures that processes adhere to the delay value.
-			*/
-			logfile = fopen(f_name, "w");
-			if (!logfile)
-			{
-				perror("Failed to open log file");
-				exit(EXIT_FAILURE);
-			}
-
-        		key_t key;
-        		system("touch msgq.txt");
-        		// get a key for our message queue
-        		if ((key = ftok("msgq.txt", 1)) == -1) {
-                		perror("ftok");
-                		exit(1);
-        		}
-        		// create our message queue
-        		if ((msqid = msgget(key, PERMS | IPC_CREAT)) == -1) {
-                		perror("msgget in parent");
-                		exit(1);
-        		}
-        		printf("Message queue set up\n");
-			
-			int ranProcesses {0};
-			size_t currentProcesses{0};
-			while (((ranProcesses < n_proc || currentProcesses > 0) && totalProcesses < n_proc) && ranProcesses < 100) 
-			{
-				ranProcesses++;
-				pid_t childPid = fork();
-				PCB_entry(&childPid);
-				if (childPid < 0)
-				{
-					perror("Fork failed");
-					exit(EXIT_FAILURE);
-				} else if (childPid == 0) // Have process lets execute it 
-				{
-					execl("./worker", "worker", NULL); // execl needs to terminate with NULL pointer
-					perror("execl failed");
-					exit(EXIT_FAILURE);					
-				}
-				findProcesses(&currentProcesses);
-				totalProcesses++;
-				autoShutdown();	
-			}
-			autoShutdown();
-		}
-	private:
-		
-		void autoShutdown()
-		// checks against the real time using the chrono library and if longer than 3 seconds of simulated time has gone by close processes and exit.
-		{
-			auto now = chrono::steady_clock::now();
-			auto totalTime = chrono::duration_cast<chrono::seconds>(now - start).count();
-			if (totalTime >= 3 || logLineCount >= 10000)
-			{
-				shmdt(simClock);
-				shmctl(shm_id, IPC_RMID, NULL);
-				for (int i = 0; i < 20; i++)
-				{	
-					if (processTable[i].occupied)
-					{
-						pid_t childPid = processTable[i].pid;
-                        			fprintf(stderr, "Killing child PID %d\n", childPid);
-                        			kill(childPid, SIGTERM);
-					}
-				}
-				printf("\nTime or log file limit exceeded cleaning up and shutting down.\n");
-				finalOutput();
-				fclose(logfile);
-				if (msgctl(msqid, IPC_RMID, NULL) == -1)
-        			{
-                			perror("msgctl failed in interrupt_catch");
-                			exit(EXIT_FAILURE);
-        			}
-				exit(EXIT_SUCCESS);
-			}
-			int checker {};
-			for (int i = 0; i < 20; i++)
-			{
-				if (processTable[i].occupied)
-				{
-					checker++;
-				}
-
-			}
-			if (!checker)
-			{
-				shmdt(simClock);
-				shmctl(shm_id, IPC_RMID, NULL);
-				printf("\nAll processes completed, cleaning up and shutting down.\n");
-				finalOutput();
-				fclose(logfile);
-				if (msgctl(msqid, IPC_RMID, NULL) == -1)
-        			{
-                			perror("msgctl failed in interrupt_catch");
-                			exit(EXIT_FAILURE);
-        			}
-				exit(EXIT_SUCCESS);
-			}
-		}
+	int total;
+	int available;
+	int allocation[20];
+	int request[20];
 };
 
-void finalOutput()
+// Global Values
+
+const int MAX_PROCESSES = 20;
+const int NUM_RESOURCES = 5;
+simClock* clockPtr;
+int shm_id;
+int msqid;
+PCB processTable[MAX_PROCESSES];
+ResourceDescriptor resourceTable[NUM_RESOURCES];
+volatile sig_atomic_t terminateFlag = 0;
+
+static FILE* logfile = nullptr;
+ 
+void interrupt_catch(int sig) 
 {
-	logwrite("\n=== Final Statistics ===\n");
+    	terminateFlag = 1;
 }
+
+// Functions
 
 void PCB_entry(pid_t *child)
 {
@@ -209,49 +94,14 @@ void PCB_entry(pid_t *child)
 	}
 }
 
-void waitProcesses()
+void incrementClock() 
 {
-	int status {};
-	pid_t child = waitpid(-1, &status, 0);
-	if (child)
+	clockPtr->nanoseconds += 10000; // 10,000 ns per loop iteration
+    	if (clockPtr->nanoseconds >= 1000000000) 
 	{
-		printf("PID: %d has finished with status %d\n", child, status);
-		endProcess(&child);	
-	}
-}
-
-void interrupt_catch(int sig)
-{
-	logwrite("\nOSS: Caught SIGINT, cleaning up processes. SIGNAL:%d\n", sig);
-
-	for (int i = 0; i < 20; i++)
-	{
-		if (processTable[i].occupied)
-		{
-			pid_t childPid = processTable[i].pid;
-			logwrite("Killing child PID %d\n", childPid);
-			kill(childPid, SIGTERM);
-		}
-	}
-
-	//wait for processes to terminate
-	for (int i = 0; i < 20; i++)
-	{
-		if (processTable[i].occupied) 
-		{
-			waitpid(processTable[i].pid, NULL, 0);
-		}
-	}
-	shmdt(simClock);
-	shmctl(shm_id, IPC_RMID, NULL);
-	finalOutput();
-	fclose(logfile);
-	if (msgctl(msqid, IPC_RMID, NULL) == -1)
-	{
-		perror("msgctl failed in interrupt_catch");
-		exit(EXIT_FAILURE);
-	}
-	exit(EXIT_FAILURE);
+        	clockPtr->seconds++;
+        	clockPtr->nanoseconds -= 1000000000;
+    	}
 }
 
 void logwrite(const char* format, ...)
@@ -276,106 +126,84 @@ void logwrite(const char* format, ...)
 	va_end(args);
 }
 
-void printPCB()
+int main(int argc, char* argv[]) 
 {
-		printf("\nOSS PID:%d SysClockS: %d SysclockNano: %lld\nProcess Table:\n", getpid(), simClock->seconds, simClock->nanoseconds);
-		printf("Entry\tOccupied PID\tStartS\tStartN\n");
-		for (int i = 0; i < 20; i++) printf("%d\t%d\t%d\t%d\t%lld\n", i, processTable[i].occupied, processTable[i].pid, processTable[i].startSeconds, processTable[i].startNano);
-}
+    	signal(SIGINT, interrupt_catch);
+	int n_proc = 5;
+    	string logfileName = "log.txt";
 
-void findProcesses(size_t *activeProcesses)
-{
-	(*activeProcesses) = 0;
-	for (int i = 0; i < 20; i++)
+    	// argument parser
+    	int opt;
+    	while ((opt = getopt(argc, argv, "hn:f:")) != -1) 
 	{
-		if (processTable[i].occupied)
+        	switch (opt) 
 		{
-			(*activeProcesses)++;
+            	case 'h':
+                	cout << "Usage: ./oss -n x -f filename\n";
+                	exit(EXIT_SUCCESS);
+            	case 'n':
+                	n_proc = atoi(optarg);
+                	break;
+            	case 'f':
+                	logfileName = optarg;
+                	break;
+        	case '?':
+			// case ? takes out all the incorrect flags and causes the program to fail. This helps protect the program from undefined behavior
+			fprintf(stderr, "Incorrect flags submitted -%c\n\n", optopt);
+      			exit(EXIT_FAILURE);
 		}
-	}
-}
+    	}
 
-void endProcess(pid_t *child)
-{
-	for (int i = 0; i < 20; i++)
+    	// open log file and so that we can write to it
+    	logfile.open(logfileName);
+    	if (!logfile.is_open()) 
 	{
-		if (processTable[i].pid == (*child))
-		{
-			processTable[i].occupied = 0;
-		}
-	}
-}
+        	cerr << "Failed to open log file." << endl;
+        	exit(EXIT_FAILURE);
+    	}
 
-WorkerLauncher argParser(int argc, char** argv)
-{
-	chrono::steady_clock::time_point start = chrono::steady_clock::now();
-	int opt = {};
-        int n_proc = {};
-	const char *f_name;
-        while((opt = getopt(argc, argv, "hn:s:i:f:")) != -1)
-        {
-                switch(opt)
-                {
-                        case 'h':
-                                printf("You have called the -%c flag.\nTo use this program you need to supply 4 flags:\n"
-                                                "-n proc for how many processes you would like to create\n"
-						"-f file name to store oss logs to.\n"
-                                                "ex: oss -n 3 -f logsfile.txt\n\n", opt);
-                                exit(EXIT_SUCCESS);
-                        case 'n':
-                                n_proc = atoi(optarg);
-                                break;
-						case 's':
-								n_simul = atoi(optarg);
-								break;
-						case 'i':
-								n_inter = atoi(optarg);
-								break;
-						case 'f':
-								f_name = optarg;
-								break;
-                        case '?':
-                                // case ? takes out all the incorrect flags and causes the program to fail. This helps protect the program from undefined behavior
-                                fprintf(stderr, "Incorrect flags submitted -%c\n\n", optopt);
-                                exit(EXIT_FAILURE);
-                }
-        }
-        printf("Values acquired: -n %d, -f %s\n\n", n_proc, f_name);	
-	
-	return WorkerLauncher(n_proc, f_name, start);
-}
-
-int main(int argc, char** argv) 
-{
-	//signal for CTRL-C interrupt
-	signal(SIGINT, interrupt_catch);
-
-	shm_id = shmget(sh_key, sizeof(struct simulClock), IPC_CREAT | 0666);
-	if (shm_id <= 0)
-	{
-		fprintf(stderr, "Shared memory get failed\n");
-		exit(EXIT_FAILURE);
-	}
-
-	simClock = (struct simulClock *)shmat(shm_id, 0, 0);
+    	// attach to shared memory with worker
+    	key_t key = ftok("oss.cpp", 42);
+    	shm_id = shmget(key, sizeof(simClock), IPC_CREAT | 0666);
+    	clockPtr = (simClock*)shmat(shm_id, nullptr, 0);
 	if (simClock <= (void *)0)
 	{
 		fprintf(stderr, "attaching clock to shared memory failed\n");
 		exit(EXIT_FAILURE);
 	}
+    	clockPtr->seconds = 0;
+    	clockPtr->nanoseconds = 0;
 
-	simClock->seconds = 0;
-	simClock->nanoseconds = 0;
+    	// message queue
+    	msqid = msgget(key, IPC_CREAT | 0666);
 
-	printf("Start clock values: %d seconds %lld nanoseconds\n\n", simClock->seconds, simClock->nanoseconds);
+    	// initialize resources for use
+    	for (int i = 0; i < NUM_RESOURCES; i++) 
+	{
+        	resourceTable[i].totalInstances = 10;
+        	resourceTable[i].availableInstances = 10;
+        	memset(resourceTable[i].allocation, 0, sizeof(resourceTable[i].allocation));
+        	memset(resourceTable[i].request, 0, sizeof(resourceTable[i].request));
+    	}
 
-	WorkerLauncher launcher = argParser(argc, argv);
-	launcher.launchProcesses();
+    	// setup processTable
+   	 memset(processTable, 0, sizeof(processTable));
 
-	// cleanup shared memory
-	shmdt(simClock);
-	shmctl(shm_id, IPC_RMID, NULL);
+    	// launch and receive section
+	long long lastFork = 0;
+	int totalLaunched = 0;
 
-	return EXIT_SUCCESS;
+	while (!terminateFlag) 
+	{
+		
+	}
+
+    	// cleaing up shared memory
+    	shmdt(clockPtr);
+    	shmctl(shm_id, IPC_RMID, nullptr);
+    	msgctl(msqid, IPC_RMID, nullptr);
+    	logfile.close();
+
+    	return EXIT_SUCCESS;
 }
 
