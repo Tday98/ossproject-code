@@ -49,6 +49,7 @@ struct PCB
 	pid_t pid;
 	int startSeconds;
 	long long startNano;
+	int blocked;
 };
 
 struct ResourceDescriptor 
@@ -72,15 +73,19 @@ struct ResourceDescriptor resourceTable[NUM_RESOURCES];
 struct simClock *simClock;
 volatile sig_atomic_t terminateFlag = 0;
 
+std::deque<int> qB;
+
 ofstream logfile;
- 
+
+// Interrupt function
+
 void interrupt_catch(int sig) 
 {
 	printf("%d", sig);
     	terminateFlag = 1;
 }
 
-// Functions
+// Functions for maintaining PCBs and resources
 
 void PCB_entry(pid_t *child)
 {
@@ -150,6 +155,27 @@ int findPCBIndex(int pid)
                 }
         }
         return -1;
+}
+
+void handleRequest(int pcbIndex, int resourceID, int units) // This function should take in the PCB index so we can find it easily and then also make 
+	// the changes in our ResourceTable if the request can be granted
+{
+	if (resourceTable[resourceID].availableInstances >= units) // We have enough resources lets grant the request.
+	{
+		resourceTable[resourceID].availableInstances -= units; // remove resources from table
+		resourceTalble[resourceID].allocation[pcbIndex] += units; // allocate resources to process
+
+		logwrite("OSS: %d units of Resource Table %d given to process PID %d.\n", units, resourceID, processTable[pcbIndex].pid);
+	} else // not enough available resources currently so lets block the process
+	{
+		resourceTable[resourceID].request[pcbIndex] = units;
+		processTable[pcbIndex].blocked = 1;
+
+		logwrite("OSS: PID %d blocked. Not able to fulfill request from Resource Table %d for %d units.\n", processTable[pcbIndex].pid, resourceID, units);
+		
+		qB.push(pcbIndex); // Push PCB index into blocked queue and need to let process know its blocked.
+	}
+			
 }
 
 int main(int argc, char* argv[]) 
@@ -273,7 +299,8 @@ int main(int argc, char* argv[])
     			} else if (buf.msg == 1) 
 			{
         			handleRelease(pcbIndex, buf.resourceID, buf.units);
-    			} else if (buf.msg == 2) {
+    			} else if (buf.msg == 2) 
+			{
        	 			handleTerminate(pcbIndex);
     			}
 		}	
