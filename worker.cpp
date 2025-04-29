@@ -16,11 +16,12 @@
 typedef struct msgbuffer {
 	long mtype;
 	pid_t pid;
-	char strData[100];
-	int intData;
+	int msg;
+	int resourceID;
+	int units;
 } msgbuffer;
 
-struct simulClock
+struct simClock
 {
 	int seconds;
 	long long nanoseconds;
@@ -33,7 +34,7 @@ int main(int argc, char** argv)
 		if (argc < 1)
 			return EXIT_FAILURE;
 		printf ("Argv: %s\n", argv[0]);
-		int shm_id = shmget(sh_key, sizeof(struct simulClock), 0666);
+		int shm_id = shmget(sh_key, sizeof(struct simClock), 0666);
 		msgbuffer buf;
 		buf.mtype = 1;
 		int msqid = 0;
@@ -59,7 +60,7 @@ int main(int argc, char** argv)
 			exit(EXIT_FAILURE);
 		}
 
-		struct simulClock *simClock = (struct simulClock *)shmat(shm_id, 0, 0);
+		struct simClock *simClock = (struct simClock *)shmat(shm_id, 0, 0);
 		if (simClock <= (void *)0)
 		{
 			fprintf(stderr, "Worker failed shmat");

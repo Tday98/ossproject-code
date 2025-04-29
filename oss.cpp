@@ -233,6 +233,50 @@ void handleTerminate(int pcbIndex) // Process has terminated either by itself or
 	processTable[pcbIndex].blocked = 0;
 }
 
+void unblockBlockedQueue()
+{
+	int size = qB.size(); // iterator constraint
+	for (int i = 0; i < size; i++)
+	{
+		int pcbIndex = qB.front();
+		qb.pop();
+
+		if (!processTable[pcbIndex].occupied || !processTable[pcbIndex].blocked) // If we land on a segment that continues no process or no blocked process lets break out.
+		{
+			continue;
+		}
+
+		for (int j = 0; j < NUM_RESOURCES; j++) // need to check every resource and see if it meets our request which was blocked earlier
+		{
+			int request = resourceTable[j].request[pcbIndex];
+
+			if (request > 0 && resourceTable[j].availableInstances >= request) // If we have the request lets grant it 
+			{
+				resourceTable[j].availableInstances -= request;
+				resourceTable[j].allocation[pcbIndex] += request;
+				resourceTable[j].request[pcbIndex] = 0; // We have updated the available and allocated now lets reset the requests
+
+				processTable[pcbIndex].blocked = 0; // No longer blocked!
+			
+				logwrite("OSS: Process PID %d unblocked and request granted at %d seconds %lld nanoseconds.\n", processTable[pcbIndex].pid, simClock->seconds, simClock->nanoseconds);
+				
+				// Reply back to worker letting it know that its request was finally granted
+				msgbuffer bufResp;
+
+				bufResp.mtype = processTable[pcbIndex].pid;
+				bufResp.pid = getpid();
+				bufResp.msgtype = 7; // chose seven so need to handle that on the worker process side to relay that it has been unblocked.
+				msgsnd(msqid, &rbufResp, sizeof(bufResp) - sizeof(long), 0);
+
+				break;
+			}
+		}
+
+		if (processTable[pcbIndex].blocked)
+			qB.push(pcbIndex);
+	}
+}
+
 int main(int argc, char* argv[]) 
 {
     	signal(SIGINT, interrupt_catch);
@@ -358,7 +402,8 @@ int main(int argc, char* argv[])
 			{
        	 			handleTerminate(pcbIndex);
     			}
-		}	
+		}
+		unblockBlockedQueue(); // Check to see if any blocked processes now have resources available.	
 	}
 
     	// cleaing up shared memory
