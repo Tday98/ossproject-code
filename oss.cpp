@@ -15,7 +15,7 @@
 #include<fstream>
 #include<cstdarg>
 #include<cstdio>
-#include<deque>
+#include<queue>
 
 using namespace std;
 
@@ -56,14 +56,14 @@ struct ResourceDescriptor
 {
 	int totalInstances;
 	int availableInstances;
-	int allocation[20];
+	int allocation[20]; // This should basically be a mirror of the PCB table and what I mean is that the indexs should lineup 1 to 1
 	int request[20];
 };
 
 // Global Values
 
 
-const int MAX_PROCESSES = 20;
+const int MAX_PROCESSES = 18;
 const int NUM_RESOURCES = 5;
 simClock* clockPtr;
 int shm_id;
@@ -73,23 +73,15 @@ struct ResourceDescriptor resourceTable[NUM_RESOURCES];
 struct simClock *simClock;
 volatile sig_atomic_t terminateFlag = 0;
 
-std::deque<int> qB;
+std::queue<int> qB;
 
 ofstream logfile;
-
-// Interrupt function
-
-void interrupt_catch(int sig) 
-{
-	printf("%d", sig);
-    	terminateFlag = 1;
-}
 
 // Functions for maintaining PCBs and resources
 
 void PCB_entry(pid_t *child)
 {
-	for (int i = 0; i < 20; i++)
+	for (int i = 0; i < MAX_PROCESSES; i++)
 	{
 		if (!processTable[i].occupied)
 		{
@@ -105,7 +97,7 @@ void PCB_entry(pid_t *child)
 int activeProcesses()
 {
 	int active = 0;
-	for (int i = 0; i < 20; i++)
+	for (int i = 0; i < MAX_PROCESSES; i++)
 	{
 		if (processTable[i].occupied)
 		{
@@ -145,9 +137,44 @@ void logwrite(const char* format, ...)
 	va_end(args);
 }
 
+// Interrupt function
+
+void interrupt_catch(int sig)
+{
+        logwrite("\nOSS: Caught SIGINT, cleaning up processes. SIGNAL:%d\n", sig);
+
+        for (int i = 0; i < MAX_PROCESSES; i++)
+        {
+                if (processTable[i].occupied)
+                {
+                        pid_t childPid = processTable[i].pid;
+                        logwrite("Killing child PID %d\n", childPid);
+                        kill(childPid, SIGTERM);
+                }
+        }
+
+        //wait for processes to terminate
+        for (int i = 0; i < MAX_PROCESSES; i++)
+        {
+                if (processTable[i].occupied)
+                {
+                        waitpid(processTable[i].pid, NULL, 0);
+                }
+        }
+        shmdt(simClock);
+        shmctl(shm_id, IPC_RMID, NULL);
+        logfile.close();
+        if (msgctl(msqid, IPC_RMID, NULL) == -1)
+        {
+                perror("msgctl failed in interrupt_catch");
+                exit(EXIT_FAILURE);
+        }
+        exit(EXIT_FAILURE);
+}
+
 int findPCBIndex(int pid)
 {
-        for (int i = 0; i < 20; i++)
+        for (int i = 0; i < MAX_PROCESSES; i++)
         {
                 if (processTable[i].occupied && processTable[i].pid == pid)
                 {
@@ -163,7 +190,7 @@ void handleRequest(int pcbIndex, int resourceID, int units) // This function sho
 	if (resourceTable[resourceID].availableInstances >= units) // We have enough resources lets grant the request.
 	{
 		resourceTable[resourceID].availableInstances -= units; // remove resources from table
-		resourceTalble[resourceID].allocation[pcbIndex] += units; // allocate resources to process
+		resourceTable[resourceID].allocation[pcbIndex] += units; // allocate resources to process
 
 		logwrite("OSS: %d units of Resource Table %d given to process PID %d.\n", units, resourceID, processTable[pcbIndex].pid);
 	} else // not enough available resources currently so lets block the process
@@ -176,6 +203,34 @@ void handleRequest(int pcbIndex, int resourceID, int units) // This function sho
 		qB.push(pcbIndex); // Push PCB index into blocked queue and need to let process know its blocked.
 	}
 			
+}
+
+void handleRelease(int pcbIndex, int resourceID, int units) // Release units of resources from a process if it sends a message relaying that it has finished utilizing the resources.
+{
+	if (resourceTable[resourceID].allocation[pcbIndex] >= units) // Only release up to the amount of units that the process has said to release
+	{
+		resourceTable[resourceID].allocation[pcbIndex] -= units;
+		resourceTable[resourceID].availableInstances += units;
+
+		logwrite("OSS: Process PID %d thoughtfully relinqueshed %d units to Resource Table %d.\n", processTable[pcbIndex].pid, units, resourceID);  
+	}
+}
+
+void handleTerminate(int pcbIndex) // Process has terminated either by itself or forcefully through my deadlock detection algorithm.
+{
+	for (int i = 0; i < NUM_RESOURCES; i++)
+	{
+		if (resourceTable[i].allocation[pcbIndex] > 0)
+		{
+			resourceTable[i].availableInstances += resourceTable[i].allocation[pcbIndex];
+			resourceTable[i].allocation[pcbIndex] = 0; // add resources back to availability and set the allocation table back to zero
+		}
+	}
+	
+	logwrite("OSS: Process PID %d terminated. \n", processTable[pcbIndex].pid);
+
+	processTable[pcbIndex].occupied = 0;
+	processTable[pcbIndex].blocked = 0;
 }
 
 int main(int argc, char* argv[]) 
