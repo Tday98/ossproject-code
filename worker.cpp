@@ -44,7 +44,7 @@ int main(int argc, char** argv)
 {
 		if (argc < 1)
 			return EXIT_FAILURE;
-		printf ("Argv: %s\n", argv[0]);
+		printf("Argv %s worker\n\n", argv[0]);
 		int shm_id = shmget(sh_key, sizeof(struct simClock), 0666);
 		msgbuffer buf;
 		buf.mtype = 1;
@@ -167,7 +167,7 @@ int main(int argc, char** argv)
 					}
 				} else // 20% no request or release 
 				{ 
-				
+					reply.msg = -1;	
 				}
 
 				reply.mtype = getppid();

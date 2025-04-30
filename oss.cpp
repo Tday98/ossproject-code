@@ -66,6 +66,7 @@ struct ResourceDescriptor
 const int MAX_PROCESSES = 18;
 const int NUM_RESOURCES = 5;
 simClock* clockPtr;
+const int sh_key = ftok("key.val", 26);
 int shm_id;
 int msqid;
 struct PCB processTable[MAX_PROCESSES];
@@ -202,7 +203,6 @@ void handleRequest(int pcbIndex, int resourceID, int units) // This function sho
 		
 		qB.push(pcbIndex); // Push PCB index into blocked queue and need to let process know its blocked.
 	}
-			
 }
 
 void handleRelease(int pcbIndex, int resourceID, int units) // Release units of resources from a process if it sends a message relaying that it has finished utilizing the resources.
@@ -320,12 +320,12 @@ int main(int argc, char* argv[])
         	cerr << "Failed to open log file." << endl;
         	exit(EXIT_FAILURE);
     	}
-
+	system("touch msgq.txt");
     	// attach to shared memory with worker
-    	key_t key = ftok("oss.cpp", 42);
-    	shm_id = shmget(key, sizeof(struct simClock), IPC_CREAT | 0666);
+    	key_t key = ftok("msgq.txt", 1);
+    	shm_id = shmget(sh_key, sizeof(struct simClock), IPC_CREAT | 0666);
     	clockPtr = (struct simClock *)shmat(shm_id, nullptr, 0);
-	if (simClock <= (void *)0)
+	if (clockPtr <= (void *)0)
 	{
 		fprintf(stderr, "attaching clock to shared memory failed\n");
 		exit(EXIT_FAILURE);
@@ -382,7 +382,8 @@ int main(int argc, char* argv[])
 		}
 
 		msgbuffer buf;
-		if (msgrcv(msqid, &buf, sizeof(buf) - sizeof(long), getpid(), IPC_NOWAIT) > 0) {
+		if (msgrcv(msqid, &buf, sizeof(buf) - sizeof(long), getpid(), IPC_NOWAIT) > 0) 
+		{
     
     			int pcbIndex = findPCBIndex(buf.pid);
 			
