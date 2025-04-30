@@ -57,7 +57,6 @@ int main(int argc, char** argv)
 			perror("ftok");
 			exit(1);
 		}
-
 		// create our message queue
 		if ((msqid = msgget(key, PERMS)) == -1) {
 			perror("msgget in child");
@@ -65,7 +64,6 @@ int main(int argc, char** argv)
 		}
 
 		printf("Child %d has access to the queue\n",getpid());
-		
 		if (shm_id < 0) 
 		{
 			fprintf(stderr, "Worker failed shmget\n");
@@ -129,7 +127,7 @@ int main(int argc, char** argv)
 			if (calculateTime(lastSec, lastNano, simClock->seconds, simClock->nanoseconds) >= 250000000)
 			{
 				int outcome = rand() % 100;
-
+printf("\n\ntest\n\n");
 				if (outcome < 60) // 60% request resources
 				{  
 					int targetResource = rand() % NUM_RESOURCES;

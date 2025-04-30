@@ -88,8 +88,8 @@ void PCB_entry(pid_t *child)
 		{
 			processTable[i].occupied = 1;
 			processTable[i].pid = (*child);
-			processTable[i].startSeconds = simClock->seconds;
-			processTable[i].startNano = simClock->nanoseconds;
+			processTable[i].startSeconds = clockPtr->seconds;
+			processTable[i].startNano = clockPtr->nanoseconds;
 			break;
 		}
 	}
@@ -119,23 +119,38 @@ void incrementClock()
 
 void logwrite(const char* format, ...)
 {
-	// Found a variadic function that send output to both screen and log file
 	va_list args;
-	va_start(args, format);
-	
-	// console print
-	vprintf(format, args);
-	
-	// need separate args for log file.
-	va_end(args);
-	va_start(args, format);
+    	va_start(args, format);
 
-	if (logfile.is_open())
-	{
-		vfprintf(stdout, format, args);
-		logfile.flush(); // flush out so it writes immediately
-	}
-	va_end(args);
+    	// Print to stdout
+    	vprintf(format, args);
+
+    	// Copy args for string formatting
+    	va_list args_copy;
+    	va_copy(args_copy, args);
+
+    	// Format into a string
+   	char buffer[1024];
+    	vsnprintf(buffer, sizeof(buffer), format, args_copy);
+
+    	// Write to log file
+    	if (logfile.is_open()) {
+        	logfile << buffer;
+        	logfile.flush();
+    	}
+
+    	va_end(args_copy);
+    	va_end(args);
+}
+
+void printPCB()
+{
+	//if (clockPtr->nanoseconds == 0 || clockPtr->nanoseconds == 500000000)
+	//{
+		logwrite("\nOSS PID:%d SysClockS: %d SysclockNano: %lld\nProcess Table:\n", getpid(), clockPtr->seconds, clockPtr->nanoseconds);
+		logwrite("Entry\tOccupied PID\tStartS\tStartN\nBlocked\n");
+		for (int i = 0; i < MAX_PROCESSES; i++) logwrite("%d\t%d\t%d\t%d\t%lld\n%d\n", i, processTable[i].occupied, processTable[i].pid, processTable[i].startSeconds, processTable[i].startNano, processTable[i].blocked);
+	//}
 }
 
 // Interrupt function
@@ -143,7 +158,7 @@ void logwrite(const char* format, ...)
 void interrupt_catch(int sig)
 {
         logwrite("\nOSS: Caught SIGINT, cleaning up processes. SIGNAL:%d\n", sig);
-
+	printPCB();
         for (int i = 0; i < MAX_PROCESSES; i++)
         {
                 if (processTable[i].occupied)
@@ -203,6 +218,12 @@ void handleRequest(int pcbIndex, int resourceID, int units) // This function sho
 		
 		qB.push(pcbIndex); // Push PCB index into blocked queue and need to let process know its blocked.
 	}
+	// Reply back to worker letting it know that its request was finally granted
+        msgbuffer bufResp;
+	bufResp.mtype = processTable[pcbIndex].pid;
+	bufResp.pid = getpid();
+	bufResp.msg = 7; // chose seven so need to handle that on the worker process side to relay that it has been unblocked.
+	msgsnd(msqid, &bufResp, sizeof(bufResp) - sizeof(long), 0);
 }
 
 void handleRelease(int pcbIndex, int resourceID, int units) // Release units of resources from a process if it sends a message relaying that it has finished utilizing the resources.
@@ -214,6 +235,12 @@ void handleRelease(int pcbIndex, int resourceID, int units) // Release units of 
 
 		logwrite("OSS: Process PID %d thoughtfully relinqueshed %d units to Resource Table %d.\n", processTable[pcbIndex].pid, units, resourceID);  
 	}
+	// Reply back to worker letting it know that its request was finally granted
+        msgbuffer bufResp;
+        bufResp.mtype = processTable[pcbIndex].pid;
+        bufResp.pid = getpid();
+        bufResp.msg = 7; // chose seven so need to handle that on the worker process side to relay that it has been unblocked.
+	msgsnd(msqid, &bufResp, sizeof(bufResp) - sizeof(long), 0);
 }
 
 void handleTerminate(int pcbIndex) // Process has terminated either by itself or forcefully through my deadlock detection algorithm.
@@ -346,8 +373,7 @@ int main(int argc, char* argv[])
     	}
 
     	// setup processTable
-   	 memset(processTable, 0, sizeof(processTable));
-
+   	memset(processTable, 0, sizeof(processTable));
     	// launch and receive section
 	long long lastFork = 0;
 	int totalLaunched = 0;
@@ -357,7 +383,6 @@ int main(int argc, char* argv[])
 		incrementClock();
 		
 		long long currentSimTime = (long long)clockPtr->seconds * 1000000000LL + clockPtr->nanoseconds;
-
 		if ((currentSimTime - lastFork) >= (n_inter * 1000000) 
 				&& totalLaunched <= n_proc
 				&& activeProcesses() <= n_simul) //check that we can fork again n_inter time restraint and that we havent created more processes than requested 
@@ -380,7 +405,6 @@ int main(int argc, char* argv[])
 				lastFork = currentSimTime;
 			}
 		}
-
 		msgbuffer buf;
 		if (msgrcv(msqid, &buf, sizeof(buf) - sizeof(long), getpid(), IPC_NOWAIT) > 0) 
 		{
