@@ -177,14 +177,10 @@ void interrupt_catch(int sig)
                         waitpid(processTable[i].pid, NULL, 0);
                 }
         }
-        shmdt(simClock);
-        shmctl(shm_id, IPC_RMID, NULL);
         fclose(logfile);
-        if (msgctl(msqid, IPC_RMID, NULL) == -1)
-        {
-                perror("msgctl failed in interrupt_catch");
-                exit(EXIT_FAILURE);
-        }
+	shmdt(clockPtr);
+        shmctl(shm_id, IPC_RMID, nullptr);
+        msgctl(msqid, IPC_RMID, nullptr);
         exit(EXIT_FAILURE);
 }
 
@@ -255,7 +251,7 @@ void handleTerminate(int pcbIndex) // Process has terminated either by itself or
 	}
 	
 	logwrite("OSS: Process PID %d terminated. \n", processTable[pcbIndex].pid);
-
+	kill(processTable[pcbIndex].pid, SIGTERM);
 	processTable[pcbIndex].occupied = 0;
 	processTable[pcbIndex].blocked = 0;
 }
@@ -339,6 +335,7 @@ bool deadlock(const int *available, const int m, const int n, const int *request
 
 int main(int argc, char* argv[]) 
 {
+	auto realTime = chrono::steady_clock::now();
     	signal(SIGINT, interrupt_catch);
 	int n_proc = 0;
 	int n_simul = 0;
@@ -410,7 +407,6 @@ int main(int argc, char* argv[])
     	// launch and receive section
 	long long lastFork = 0;
 	int totalLaunched = 0;
-	bool deadlock = false;
 	while (!terminateFlag) 
 	{
 		incrementClock();
@@ -462,11 +458,46 @@ int main(int argc, char* argv[])
     			}
 		}
 		unblockBlockedQueue(); // Check to see if any blocked processes now have resources available.	
-		if (currentSimTime % 2500000000 < 10000)
+		if (currentSimTime % 2500000000LL < 10000)
 			printResourceTable();
-		if (currentSimTime % 5000000000 < 10000)
+		if (currentSimTime % 5000000000LL < 10000)
 			printPCB();
-		//deadlock = deadlock(
+		int request[NUM_RESOURCES * MAX_PROCESSES] = {0};
+		int allocated[NUM_RESOURCES * MAX_PROCESSES] = {0};
+		int available[NUM_RESOURCES];
+
+		for (int i = 0; i < NUM_RESOURCES; i++)
+		{
+			available[i] = resourceTable[i].availableInstances;
+			for (int j = 0; j < MAX_PROCESSES; j++)
+			{
+				request[j * NUM_RESOURCES + i] = resourceTable[i].request[j]; // The fancy math steps through the flattened array
+				allocated[j * NUM_RESOURCES + i] = resourceTable[i].allocation[j];
+			}
+		}
+		if (currentSimTime % 1000000000LL < 10000)
+		{
+			if (deadlock(available, NUM_RESOURCES, MAX_PROCESSES, request, allocated))
+			{
+				logwrite("\nOSS: Deadlock found time: %d seconds %lld nanoseconds\n", clockPtr->seconds, clockPtr->nanoseconds);
+				for (int i = 0; i < MAX_PROCESSES; i++) // find blocked processes and terminate it to end deadlock
+				{
+					if (processTable[i].occupied && processTable[i].blocked)
+					{
+						logwrite("OSS: PID %d terminated to stop a deadlock\n", processTable[i].pid);
+						handleTerminate(i);
+						break;
+					}
+				}
+			}
+		}
+		auto now = chrono::steady_clock::now();
+		if (chrono::duration_cast<chrono::seconds>(now - realTime).count() >= 5)
+		{
+			logwrite("\n\nOSS: 5 second time limit exceeding ending program\n\n");
+			terminateFlag = 1;
+			break;		
+		}
 	}
 
     	// cleaing up shared memory
