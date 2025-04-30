@@ -3,36 +3,34 @@ Project for OS 4760 with Professor Mark Hauschild
 Author: Tristan Day
 
 ## Overview
-I use the following Unix/Linux system calls to launch child processes and manage them from a parent process: fork(), execl(), and waitpid().
-I tried an OOP based approach to handle the creating and management of child processes.
-This has project has two parts oss.cpp and user.cpp. oss.cpp is the main process of the project whereas worker.cpp is the child process.
-A demo call using this project is "./oss -n 4 -f logfile.txt" which would create 4 processes and save data to a file called "logfile.txt".
+I use the following Unix/Linux system calls to launch child processes and manage them from a parent process: fork(), execl()
+I removed my OOP based approach to handle the creating and management of child processes and decided to move to a more streamline functional approach.
+This has project has two parts oss.cpp and worker.cpp. oss.cpp is the main process of the project whereas worker.cpp is the child process.
+A demo call using this project is "./oss -n 4 -i 250 -s 2 -f logfile.txt" which would create 4 processes, 250 ms between launches, 2 simultaneous max and save data to a file called "logfile.txt".
 
-## UserLauncher
-These elements are n_proc (number processes) and start (time Userlauncher started). 
-There is also a PCB table and a simulated clock stored in shared memory between OSS process and WORKER process
+### main()
+Main hosts most of the interacting with the forking processes and also making calls to the other utility functions in the oss.cpp file.
 
-### void launchProcesses()
-This function forks of a child process up to n_proc while making function calls to manageSimProcesses(). It has some simple error handling incase of fork failure and execl failure.
-It makes a call with execl() to the user executable passing through the amount of time generated to work as supplied with -t and my gerneateWorkTime() function. After a child process is created it is added to the PCB for management purposes.
+### handleRequest()
+This function just has the handling of the resource requests sent from a worker process. It checks to see if it is grantable if it is grant it else block the process because it is now stuck.
 
-### void waitProcesses()
-This is my catch that I call at the end of my launchProcesses() function. It checks the processTable for any PIDs still left in the set and if there are any it will wait for it to finish so I don't accidently create a zombie process.
+### handleRelease()
+This rarely gets called but a process so graciously has allowed OSS to take back a resource that it had previously taken.
 
-## Global functions
-### UserLauncher argParser(int argc, char** argv)
-This function just parses the command line arguments using getopt and then creates a UserLauncher object with the user supplied values in -n -s -t.
-### printPCB()
-### findProcesses(size_t *activeProcesses)
-iterates through PCB and finds processes that occupy the table. increments the activeProcesses if it finds an active process.
-### endProcess(pid_t *child)
-### unblock()
-unblocks a process after the simulated time passes
-### dispatchProcess()
-was my attempt to implement a full MLFQ uses q0-q2 for my different levels and appropriately sets time quantums.
+### handleTerminate()
+This handles the termination message sent from a worker and removes all the information about this process.
+
+### unblockBlockedQueue()
+This will unblock a previously blocked process if its last request becomes grantable
+
+### req_lt_avail()
+code given from the lecture notes. I believe what this function does is simulate if the requests can be given or not.
+
+### deadlock()
+code given from lecture notes. runs through the current state of our resource table and determines whether or not a process will remain indefinitely blocked.
 
 ## Issues I've had this far
-My PCB block will not print out and I don't know why my processes won't all terminate. I don't think my timing is right for the PCB block and I don't think my code in general works as well as it should.
+I'm not entirely sure my deadlock is working as intended. I really feel like I got this project close but not as close as I would have liked. I had a lot of issues wrapping my head around how to tackle this project but I'm proud of what I was able to accomplish.
 
 ## Next steps
-I wish I could have figured out why all my processes wouldn't finished but I got really run down with the project and needed to switch focus to other things. This was a really tough one!
+I wish I could have gotten deadlock to work properly and gotten some of the aspects of the project done. I didn't have time to implement the verbosity of the logs which was a bummer.
