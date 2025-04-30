@@ -147,6 +147,12 @@ void printPCB()
 	//}
 }
 
+void printResourceTable()
+{
+	logwrite("\n\tR0\tR1\tR2\tR3\tR4\n");
+	for (int i = 0; i < MAX_PROCESSES; i++) logwrite("P%d\t%d\t %d\t %d\t %d\t %d\n",i, resourceTable[0].allocation[i], resourceTable[1].allocation[i], resourceTable[2].allocation[i], resourceTable[3].allocation[i], resourceTable[4].allocation[i]);
+}
+
 // Interrupt function
 
 void interrupt_catch(int sig)
@@ -197,6 +203,7 @@ int findPCBIndex(int pid)
 void handleRequest(int pcbIndex, int resourceID, int units) // This function should take in the PCB index so we can find it easily and then also make 
 	// the changes in our ResourceTable if the request can be granted
 {
+	msgbuffer bufResp;
 	if (resourceTable[resourceID].availableInstances >= units) // We have enough resources lets grant the request.
 	{
 		resourceTable[resourceID].availableInstances -= units; // remove resources from table
@@ -211,12 +218,11 @@ void handleRequest(int pcbIndex, int resourceID, int units) // This function sho
 		logwrite("OSS: PID %d blocked. Not able to fulfill request from Resource Table %d for %d units.\n", processTable[pcbIndex].pid, resourceID, units);
 		
 		qB.push(pcbIndex); // Push PCB index into blocked queue and need to let process know its blocked.
+		bufResp.msg = 5;
 	}
 	// Reply back to worker letting it know that its request was finally granted
-        msgbuffer bufResp;
 	bufResp.mtype = processTable[pcbIndex].pid;
 	bufResp.pid = getpid();
-	bufResp.msg = 7; // chose seven so need to handle that on the worker process side to relay that it has been unblocked.
 	msgsnd(msqid, &bufResp, sizeof(bufResp) - sizeof(long), 0);
 }
 
@@ -233,7 +239,7 @@ void handleRelease(int pcbIndex, int resourceID, int units) // Release units of 
         msgbuffer bufResp;
         bufResp.mtype = processTable[pcbIndex].pid;
         bufResp.pid = getpid();
-        bufResp.msg = 7; // chose seven so need to handle that on the worker process side to relay that it has been unblocked.
+        bufResp.msg = 2; // chose seven so need to handle that on the worker process side to relay that it has been unblocked.
 	msgsnd(msqid, &bufResp, sizeof(bufResp) - sizeof(long), 0);
 }
 
@@ -297,6 +303,39 @@ void unblockBlockedQueue()
 			qB.push(pcbIndex);
 	}
 }
+
+bool req_lt_avail(const int *req, const int *avail, const int pnum, const int num_res)
+{
+        int i (0);
+        for (; i < num_res; i++)
+                if (req[pnum*num_res+i] > avail[i] )
+                        break;
+        return ( i == num_res );
+}
+
+bool deadlock(const int *available, const int m, const int n, const int *request, const int *allocated) 
+{
+	int work[m]; // m resources
+	bool finish[n]; // n processes
+	for (int i = 0; i < m; work[i] = available[++i]);
+	for (int i = 0; i < n; finish[i++] = false);
+	int p (0);
+	for (; p < n; p++) 
+	{
+		if ( finish[p] ) continue;
+		if (req_lt_avail (request, work, p, m)) {
+			finish[p] = true;
+			for (int i (0); i < m; i++)
+				work[i] += allocated[p*m+i];
+			p = -1;
+		}
+	}
+	for (p = 0; p < n; p++)
+		if ( !finish[p] )
+			break;
+	return (p != n);
+}
+
 
 int main(int argc, char* argv[]) 
 {
@@ -371,7 +410,7 @@ int main(int argc, char* argv[])
     	// launch and receive section
 	long long lastFork = 0;
 	int totalLaunched = 0;
-
+	bool deadlock = false;
 	while (!terminateFlag) 
 	{
 		incrementClock();
@@ -423,6 +462,11 @@ int main(int argc, char* argv[])
     			}
 		}
 		unblockBlockedQueue(); // Check to see if any blocked processes now have resources available.	
+		if (currentSimTime % 2500000000 < 10000)
+			printResourceTable();
+		if (currentSimTime % 5000000000 < 10000)
+			printPCB();
+		//deadlock = deadlock(
 	}
 
     	// cleaing up shared memory

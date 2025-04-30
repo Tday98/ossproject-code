@@ -89,11 +89,6 @@ int main(int argc, char** argv)
 		while (!done)
 		{
 			srand(getpid() ^ time(NULL));
-			if (msgrcv(msqid, &buf, sizeof(msgbuffer), getpid(), 0) == -1) 
-			{
-				perror("msgrcv in parent failed\n");
-				exit(1);
-			}
 			
 			if (buf.msg == 5) // We're now blocked
 				blocked = true;
@@ -178,6 +173,12 @@ int main(int argc, char** argv)
 				}
 				lastSec = simClock->seconds;
 				lastNano = simClock->nanoseconds;
+
+				if (msgrcv(msqid, &buf, sizeof(msgbuffer), getpid(), 0) == -1)
+                        	{
+                                perror("msgrcv in parent failed\n");
+                                exit(1);
+                        	}
 			}
                	}
 		// Just in case

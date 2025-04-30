@@ -1,5 +1,5 @@
 COMP	= g++
-COMPFLAGS  = -g3 -Wall -Wextra -Werror -std=c++14
+COMPFLAGS  = -g3 -Wall -Wextra -std=c++14
 TARGET1 = worker
 TARGET2 = oss 
 
