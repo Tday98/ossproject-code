@@ -54,8 +54,8 @@ struct PCB
 
 struct ResourceDescriptor 
 {
-	int totalInstances;
-	int availableInstances;
+	int totalInstances = 10;
+	int availableInstances = 10;
 	int allocation[20]; // This should basically be a mirror of the PCB table and what I mean is that the indexs should lineup 1 to 1
 	int request[20];
 };
