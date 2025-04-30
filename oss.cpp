@@ -239,7 +239,7 @@ void unblockBlockedQueue()
 	for (int i = 0; i < size; i++)
 	{
 		int pcbIndex = qB.front();
-		qb.pop();
+		qB.pop();
 
 		if (!processTable[pcbIndex].occupied || !processTable[pcbIndex].blocked) // If we land on a segment that continues no process or no blocked process lets break out.
 		{
@@ -265,8 +265,8 @@ void unblockBlockedQueue()
 
 				bufResp.mtype = processTable[pcbIndex].pid;
 				bufResp.pid = getpid();
-				bufResp.msgtype = 7; // chose seven so need to handle that on the worker process side to relay that it has been unblocked.
-				msgsnd(msqid, &rbufResp, sizeof(bufResp) - sizeof(long), 0);
+				bufResp.msg = 7; // chose seven so need to handle that on the worker process side to relay that it has been unblocked.
+				msgsnd(msqid, &bufResp, sizeof(bufResp) - sizeof(long), 0);
 
 				break;
 			}
