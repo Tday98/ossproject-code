@@ -76,7 +76,7 @@ volatile sig_atomic_t terminateFlag = 0;
 
 std::queue<int> qB;
 
-ofstream logfile;
+static FILE* logfile = nullptr;
 
 // Functions for maintaining PCBs and resources
 
@@ -119,37 +119,31 @@ void incrementClock()
 
 void logwrite(const char* format, ...)
 {
+	// Found a variadic function that send output to both screen and log file
 	va_list args;
-    	va_start(args, format);
+	va_start(args, format);
+	
+	// console print
+	vprintf(format, args);
+	
+	// need separate args for log file.
+	va_end(args);
+	va_start(args, format);
 
-    	// Print to stdout
-    	vprintf(format, args);
-
-    	// Copy args for string formatting
-    	va_list args_copy;
-    	va_copy(args_copy, args);
-
-    	// Format into a string
-   	char buffer[1024];
-    	vsnprintf(buffer, sizeof(buffer), format, args_copy);
-
-    	// Write to log file
-    	if (logfile.is_open()) {
-        	logfile << buffer;
-        	logfile.flush();
-    	}
-
-    	va_end(args_copy);
-    	va_end(args);
+	if (logfile)
+	{
+		vfprintf(logfile, format, args);
+		fflush(logfile); // flush out so it writes immediately
+	}
+	va_end(args);
 }
-
 void printPCB()
 {
 	//if (clockPtr->nanoseconds == 0 || clockPtr->nanoseconds == 500000000)
 	//{
 		logwrite("\nOSS PID:%d SysClockS: %d SysclockNano: %lld\nProcess Table:\n", getpid(), clockPtr->seconds, clockPtr->nanoseconds);
-		logwrite("Entry\tOccupied PID\tStartS\tStartN\nBlocked\n");
-		for (int i = 0; i < MAX_PROCESSES; i++) logwrite("%d\t%d\t%d\t%d\t%lld\n%d\n", i, processTable[i].occupied, processTable[i].pid, processTable[i].startSeconds, processTable[i].startNano, processTable[i].blocked);
+		logwrite("Entry\tOccupied PID\tStartS\tStartN\tBlocked\n");
+		for (int i = 0; i < MAX_PROCESSES; i++) logwrite("%d\t%d\t%d\t%d\t%lld\t%d\n", i, processTable[i].occupied, processTable[i].pid, processTable[i].startSeconds, processTable[i].startNano, processTable[i].blocked);
 	//}
 }
 
@@ -179,7 +173,7 @@ void interrupt_catch(int sig)
         }
         shmdt(simClock);
         shmctl(shm_id, IPC_RMID, NULL);
-        logfile.close();
+        fclose(logfile);
         if (msgctl(msqid, IPC_RMID, NULL) == -1)
         {
                 perror("msgctl failed in interrupt_catch");
@@ -341,8 +335,8 @@ int main(int argc, char* argv[])
     	}
 
     	// open log file and so that we can write to it
-    	logfile.open(logfileName);
-    	if (!logfile.is_open()) 
+    	logfile = fopen(logfileName.c_str(), "w");
+    	if (!logfile) 
 	{
         	cerr << "Failed to open log file." << endl;
         	exit(EXIT_FAILURE);
@@ -385,7 +379,7 @@ int main(int argc, char* argv[])
 		long long currentSimTime = (long long)clockPtr->seconds * 1000000000LL + clockPtr->nanoseconds;
 		if ((currentSimTime - lastFork) >= (n_inter * 1000000) 
 				&& totalLaunched <= n_proc
-				&& activeProcesses() <= n_simul) //check that we can fork again n_inter time restraint and that we havent created more processes than requested 
+				&& activeProcesses() < n_simul) //check that we can fork again n_inter time restraint and that we havent created more processes than requested 
 		{
 			pid_t childPid = fork();
 			if (childPid < 0)
@@ -435,7 +429,7 @@ int main(int argc, char* argv[])
     	shmdt(clockPtr);
     	shmctl(shm_id, IPC_RMID, nullptr);
     	msgctl(msqid, IPC_RMID, nullptr);
-    	logfile.close();
+    	fclose(logfile);
 
     	return EXIT_SUCCESS;
 }

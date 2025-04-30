@@ -127,7 +127,6 @@ int main(int argc, char** argv)
 			if (calculateTime(lastSec, lastNano, simClock->seconds, simClock->nanoseconds) >= 250000000)
 			{
 				int outcome = rand() % 100;
-printf("\n\ntest\n\n");
 				if (outcome < 60) // 60% request resources
 				{  
 					int targetResource = rand() % NUM_RESOURCES;
@@ -136,7 +135,8 @@ printf("\n\ntest\n\n");
 						reply.msg = 0; // request from OSS
 						reply.resourceID = targetResource;
 						reply.units = 1;
-						allocation[targetResource] += 1;		
+						allocation[targetResource] += 1;
+						printf("WORKER: Requesting R%d from OSS 1 unit\n", targetResource);		
 					} else 
 					{
 						reply.msg = 2;
@@ -162,6 +162,7 @@ printf("\n\ntest\n\n");
 						reply.resourceID = release;
 						reply.units = 1;
 						allocation[release] -= 1;
+						printf("WORKER: Releasing 1 unit from R%d\n", targetResource);
 					}
 				} else // 20% no request or release 
 				{ 
