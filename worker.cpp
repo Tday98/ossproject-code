@@ -18,9 +18,9 @@ typedef struct msgbuffer
 {
 	long mtype;
 	pid_t pid;
-	int msg; // 0 request, 1 release, 2 terminate
-	int resourceID;
-	int units;
+	int msg; // 0 read, 1 write, 2 terminate
+	int address; // memory address
+	int mode; // 1 for write mode, 0 for read mode
 } msgbuffer;
 
 struct simClock
@@ -30,10 +30,9 @@ struct simClock
 };
 
 const int sh_key = ftok("key.val", 26);
-const int MAX_RESOURCES = 10;
-const int NUM_RESOURCES = 5;
-int allocation[NUM_RESOURCES] = {0};
-int maxPerResource[NUM_RESOURCES] = {MAX_RESOURCES, MAX_RESOURCES, MAX_RESOURCES, MAX_RESOURCES, MAX_RESOURCES};
+const int PAGE_SIZE = 1024;
+const int PAGES_PER_PROCESS = 32;
+const int MAX_ADDRESS = PAGES_PER_PROCESS * PAGE_SIZE;
 
 long long calculateTime(int lastSec, long long lastNano, int simSec, long long simNano) // gives me the time in nano seconds
 {

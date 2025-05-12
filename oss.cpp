@@ -32,9 +32,9 @@ typedef struct msgbuffer
 {
 	long mtype; // parent PID
 	pid_t pid; // child PID
-	int msg; // request, release or terminate
-	int resourceID; // which resource
-	int units; // how many resources
+	int msg; // 0 read, 1 write or 2 terminate
+	int address; // which location in memory
+	int mode; // writing or reading 1 for write 0 for read
 } msgbuffer;
 
 struct simClock
@@ -52,17 +52,29 @@ struct PCB
 	int blocked;
 };
 
-struct ResourceDescriptor 
+struct PageTable 
 {
-	int totalInstances = 10;
-	int availableInstances = 10;
-	int allocation[20]; // This should basically be a mirror of the PCB table and what I mean is that the indexs should lineup 1 to 1
-	int request[20];
+	int frameNumber; // which frame
+	int dirtybit; // something from the specs
+	int lastSeconds; // last access time second
+	long long lastNano; // last access time nanoseconds
+};
+
+struct FrameTable
+{
+	int occupied; // 1 if occupied
+	int dirtybit; // same thing as page table will figure out later
+	int lastSeconds;
+	long long lastNano;
+	pid_t pid; // process id for that frame
+	int pageNumber; // page number also discussed in specs
 };
 
 // Global Values
-
-
+const int PAGE_SIZE = 1024; // 1KB page size
+const int MEMORY_SIZE = 128 * 1024; // 128KB total memory
+const int NUM_FRAMES = MEMORY_SIZE / PAGE_SIZE; // total number of frames
+const int PAGES_PER_PROCESS = 32; // 32KB per process as in specs
 const int MAX_PROCESSES = 18;
 const int NUM_RESOURCES = 5;
 simClock* clockPtr;
@@ -72,9 +84,12 @@ int msqid;
 struct PCB processTable[MAX_PROCESSES];
 struct ResourceDescriptor resourceTable[NUM_RESOURCES];
 struct simClock *simClock;
+struct PageTable processPageTables[MAX_PROCESSES];
+struct FrameTableEntry frameTable[NUM_FRAMES];
 volatile sig_atomic_t terminateFlag = 0;
 
 std::queue<int> qB;
+std::queue<int> qPF;
 
 static FILE* logfile = nullptr;
 
