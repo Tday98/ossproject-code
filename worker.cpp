@@ -20,7 +20,7 @@ typedef struct msgbuffer
 	pid_t pid;
 	int msg; // 0 read, 1 write, 2 terminate
 	int address; // memory address
-	int mode; // 1 for write mode, 0 for read mode
+	int isWrite; // 1 for write mode, 0 for read mode
 } msgbuffer;
 
 struct simClock
@@ -76,15 +76,13 @@ int main(int argc, char** argv)
 			exit(EXIT_FAILURE);
 		}
 
-		int createdSec = simClock->seconds;
-		long long createdNano = simClock->nanoseconds;
-
 		int lastSec = simClock->seconds;
 		long long lastNano = simClock->nanoseconds;
 		msgbuffer reply;
 
 		printf("WORKER PID:%d PPID:%d SysClockS: %d SysclockNano: %lld\n--Just Starting\n", getpid(), getppid(), simClock->seconds, simClock->nanoseconds);
 		bool done = false;
+		int memoryAccesses = 0;
 		while (!done)
 		{
 			srand(getpid() ^ time(NULL));
@@ -102,81 +100,47 @@ int main(int argc, char** argv)
 					blocked = false;
 			}
 
-			if (calculateTime(createdSec, createdNano, simClock->seconds, simClock->nanoseconds) >= 1000000000)
+			if (memoryAccesses > 0 && memoryAccesses % (1000 + (rand() % 201 - 100)) == 0)
 			{
 				if ((rand() % 100) < 5)
 				{
 					reply.msg = 2;
-					for (int i = 0; i < NUM_RESOURCES; i++)
-					{
-						if (allocation[i] > 0)
-						{
-							allocation[i] = 0;
-						}
-					}
 					done = true;
 					break;
 				}
 			}
+
 			if (calculateTime(lastSec, lastNano, simClock->seconds, simClock->nanoseconds) >= 250000000)
 			{
-				int outcome = rand() % 100;
-				if (outcome < 60) // 60% request resources
-				{  
-					int targetResource = rand() % NUM_RESOURCES;
-					if (allocation[targetResource] + 1 <= maxPerResource[targetResource])
-					{
-						reply.msg = 0; // request from OSS
-						reply.resourceID = targetResource;
-						reply.units = 1;
-						allocation[targetResource] += 1;
-						printf("WORKER: Requesting R%d from OSS 1 unit\n", targetResource);		
-					} else 
-					{
-						reply.msg = 2;
-						reply.resourceID = -1;
-						reply.units = 0;
-					}
-				} else if (outcome < 80) // 20% release a resource
-				{	 
-					int release = -1;
-					int targetResource = rand() % NUM_RESOURCES;
-					int i;
-					while (allocation[targetResource] == 0 && i < 100)
-					{
-						targetResource = rand() % NUM_RESOURCES;
-						i++;
-					}
-					if (allocation[targetResource] > 0)
-						release = targetResource;
-
-					if (release != -1)
-					{
-						reply.msg = 1; // signal release to OSS
-						reply.resourceID = release;
-						reply.units = 1;
-						allocation[release] -= 1;
-						printf("WORKER: Releasing 1 unit from R%d\n", targetResource);
-					}
-				} else // 20% no request or release 
-				{ 
-					reply.msg = -1;	
-				}
-
+				// generate random memory address
+				int pageNumber = rand() % PAGES_PER_PROCESS;
+				int offset = rand() % PAGE_SIZE;
+				int address = (pageNumber * PAGE_SIZE) + offset;
+				
+				// determine if read or write (bias towards reads)
+				int isWrite = (rand() % 100 < 20) ? 1 : 0; // 20% chance of write
+				
+				reply.msg = isWrite ? 1 : 0;
+				reply.address = address;
+				reply.isWrite = isWrite;
 				reply.mtype = getppid();
 				reply.pid = getpid();
+
+				printf("WORKER: Requesting %s of address %d\n", isWrite ? "write" : "read", address);
 
 				if (msgsnd(msqid, &reply, sizeof(reply) - sizeof(long), 0) == -1) 
 				{
 					perror("Worker: msgsnd failed");
 				}
+				
+				memoryAccesses++;
 				lastSec = simClock->seconds;
 				lastNano = simClock->nanoseconds;
 
 				if (msgrcv(msqid, &buf, sizeof(msgbuffer), getpid(), 0) == -1)
                         	{
-                                perror("msgrcv in parent failed\n");
-                                exit(1);
+                                	perror("msgrcv in parent failed\n");
+                                	exit(1);
                         	}
 			}
                	}

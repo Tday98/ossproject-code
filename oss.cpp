@@ -34,7 +34,7 @@ typedef struct msgbuffer
 	pid_t pid; // child PID
 	int msg; // 0 read, 1 write or 2 terminate
 	int address; // which location in memory
-	int mode; // writing or reading 1 for write 0 for read
+	int isWrite; // writing or reading 1 for write 0 for read
 } msgbuffer;
 
 struct simClock
@@ -83,13 +83,12 @@ const int sh_key = ftok("key.val", 26);
 int shm_id;
 int msqid;
 struct PCB processTable[MAX_PROCESSES];
-struct ResourceDescriptor resourceTable[NUM_RESOURCES];
 struct simClock *simClock;
-struct PageTable processPageTables[MAX_PROCESSES];
-struct FrameTableEntry frameTable[NUM_FRAMES];
+
+struct PageTable processPageTables[MAX_PROCESSES][PAGES_PER_PROCESS];
+struct FrameTable frameTable[NUM_FRAMES];
 volatile sig_atomic_t terminateFlag = 0;
 
-std::queue<int> qB;
 std::queue<int> qPF;
 
 static FILE* logfile = nullptr;
@@ -163,12 +162,6 @@ void printPCB()
 	//}
 }
 
-void printResourceTable()
-{
-	logwrite("\n\tR0\tR1\tR2\tR3\tR4\n");
-	for (int i = 0; i < MAX_PROCESSES; i++) logwrite("P%d\t%d\t %d\t %d\t %d\t %d\n",i, resourceTable[0].allocation[i], resourceTable[1].allocation[i], resourceTable[2].allocation[i], resourceTable[3].allocation[i], resourceTable[4].allocation[i]);
-}
-
 // Interrupt function
 
 void interrupt_catch(int sig)
@@ -210,6 +203,51 @@ int findPCBIndex(int pid)
                 }
         }
         return -1;
+}
+
+void handleTerminate(int pcbIndex) // Process has terminated either by itself or forcefully through my deadlock detection algorithm.
+{
+	for (int i = 0; i < PAGES_PER_PROCESS; i++) // free all frames used by pcbIndex 
+	{
+		int frameNumber = processPageTables[pcbIndex][i].frameNumber;
+        	if (frameNumber != -1) 
+		{
+			if (frameTable[frameNumber].dirtybit) 
+			{
+                	incrementClock(); // add time for writing dirty page
+                	logwrite("OSS: Dirty bit of frame %d set, adding additional time to the clock during cleanup\n", frameNumber);
+            		}
+            
+            		// clear the frame
+            		frameTable[frameNumber].occupied = 0;
+            		frameTable[frameNumber].dirtybit = 0;
+            		frameTable[frameNumber].pid = 0;
+            		frameTable[frameNumber].pageNumber = 0;
+            		frameTable[frameNumber].lastSeconds = 0;
+            		frameTable[frameNumber].lastNano = 0;
+            
+            		// clear the page table entry
+            		processPageTables[pcbIndex][i].frameNumber = -1;
+            		processPageTables[pcbIndex][i].dirtybit = 0;
+            		processPageTables[pcbIndex][i].lastSeconds = 0;
+            		processPageTables[pcbIndex][i].lastNano = 0;
+        	}
+    	}
+    	// log termination with memory statistics
+    	logwrite("OSS: Process PID %d terminated at time %d:%lld\n", 
+			processTable[pcbIndex].pid, 
+             		clockPtr->seconds, 
+             		clockPtr->nanoseconds);
+    
+    	// send termination signal to process
+    	kill(processTable[pcbIndex].pid, SIGTERM);
+    
+    	// clear PCB entry
+    	processTable[pcbIndex].occupied = 0;
+    	processTable[pcbIndex].blocked = 0;
+    	processTable[pcbIndex].pid = 0;
+    	processTable[pcbIndex].startSeconds = 0;
+    	processTable[pcbIndex].startNano = 0;
 }
 
 int findFrame() // looks to find an available frame in frame table.
@@ -265,7 +303,7 @@ void handlePageFault(int pcbIndex, int pageNumber, int isWrite) // If there are 
 	frameTable[frame].dirtybit = isWrite;
 	frameTable[frame].lastSeconds = clockPtr->seconds;
 	frameTable[frame].lastNano = clockPtr->nanoseconds;
-	frameTable[frame].pid = processTable[pcbIndex].pid
+	frameTable[frame].pid = processTable[pcbIndex].pid;
 	frameTable[frame].pageNumber = pageNumber;
 	
 	// set new page in page table
@@ -277,7 +315,7 @@ void handlePageFault(int pcbIndex, int pageNumber, int isWrite) // If there are 
 	logwrite("OSS: Clearing frame %d and swapping in p%d page %d\n", frame, pcbIndex, pageNumber);
 }
 
-void printMemoryTables()
+void printMemoryTables() // print function to display what is requested from the specs
 {
 	logwrite("\nCurrent memory layout at time %d:%lld is:\n", clockPtr->seconds, clockPtr->nanoseconds);
 	logwrite("         \tOccupied\tDirtybit\tLastSec\tLastNano\n");
@@ -304,6 +342,44 @@ void printMemoryTables()
             logwrite("]\n");
         }
     }
+}
+
+void handleMemoryRequest(int pcbIndex, int address, int isWrite) // handle memory addresses checks for page fault or hit
+{
+	int pageNumber = address / PAGE_SIZE;
+	
+	logwrite("OSS: P%d requesting %s of address %d at time %d:%lld\n",
+			pcbIndex,
+			isWrite ? "write" : "read",
+			address,
+			clockPtr->seconds,
+			clockPtr->nanoseconds);
+
+	if (processPageTables[pcbIndex][pageNumber].frameNumber == -1) // -1 means that we have a page fault (page not in table)
+	{
+		logwrite("OSS: Address %d is not in a frame, pagefault\n", address);
+		handlePageFault(pcbIndex, pageNumber, isWrite);
+		processTable[pcbIndex].blocked = 1;
+		qPF.push(pcbIndex);
+	} else // not == -1 so we have a page hit
+	{
+		int frame = processPageTables[pcbIndex][pageNumber].frameNumber;
+		frameTable[frame].lastSeconds = clockPtr->seconds;
+		frameTable[frame].lastNano = clockPtr->nanoseconds;
+		frameTable[frame].dirtybit |= isWrite; // dirtybit or isWrite need to evaluate to see if we are still in write mode
+
+		processPageTables[pcbIndex][pageNumber].lastSeconds = clockPtr->seconds;
+		processPageTables[pcbIndex][pageNumber].lastNano = clockPtr->nanoseconds;
+		processPageTables[pcbIndex][pageNumber].dirtybit |= isWrite;
+
+		logwrite("OSS: Address %d in frame %d, %s data to P%d at time %d:%lld\n",
+                 address, 
+		 frame, 
+		 isWrite ? "writing" : "giving",
+                 pcbIndex, 
+		 clockPtr->seconds, 
+		 clockPtr->nanoseconds);
+	}
 }
 
 int main(int argc, char* argv[]) 
@@ -366,20 +442,27 @@ int main(int argc, char* argv[])
     	// message queue
     	msqid = msgget(key, IPC_CREAT | 0666);
 
-    	// initialize resources for use
-    	for (int i = 0; i < NUM_RESOURCES; i++) 
-	{
-        	resourceTable[i].totalInstances = 10;
-        	resourceTable[i].availableInstances = 10;
-        	memset(resourceTable[i].allocation, 0, sizeof(resourceTable[i].allocation));
-        	memset(resourceTable[i].request, 0, sizeof(resourceTable[i].request));
-    	}
-
     	// setup processTable
    	memset(processTable, 0, sizeof(processTable));
     	// launch and receive section
 	long long lastFork = 0;
 	int totalLaunched = 0;
+
+	for (int i = 0; i < MAX_PROCESSES; i++) // intialize page table nad frame tables
+	{
+		for (int j = 0; j < PAGES_PER_PROCESS; j++)
+		{
+			processPageTables[i][j].frameNumber = -1;
+			processPageTables[i][j].dirtybit = 0;
+		}
+	}
+
+	for (int i = 0; i < NUM_FRAMES; i++)
+	{
+		frameTable[i].occupied = 0;
+		frameTable[i].dirtybit = 0;
+	}
+
 	while (!terminateFlag) 
 	{
 		incrementClock();
@@ -407,6 +490,26 @@ int main(int argc, char* argv[])
 				lastFork = currentSimTime;
 			}
 		}
+
+		if (!qPF.empty())
+		{
+			int pcbIndex = qPF.front();
+			if (processTable[pcbIndex].occupied)
+			{
+				if (currentSimTime - processTable[pcbIndex].startNano >= 14000000) // I/O delay
+				{
+					processTable[pcbIndex].blocked = 0;
+					qPF.pop();
+
+					msgbuffer buf;
+					buf.mtype = processTable[pcbIndex].pid;
+					buf.pid = getpid();
+					buf.msg = 7; // unblock the process
+					msgsnd(msqid, &buf, sizeof(buf) - sizeof(long), 0);
+				}
+			}
+		}
+
 		msgbuffer buf;
 		if (msgrcv(msqid, &buf, sizeof(buf) - sizeof(long), getpid(), IPC_NOWAIT) > 0) 
 		{
@@ -419,51 +522,19 @@ int main(int argc, char* argv[])
 				exit(EXIT_FAILURE);
 			}
 
-    			if (buf.msg == 0) 
+    			if (buf.msg == 0 || buf.msg == 1) 
 			{
-        			handleRequest(pcbIndex, buf.resourceID, buf.units);
-    			} else if (buf.msg == 1) 
-			{
-        			handleRelease(pcbIndex, buf.resourceID, buf.units);
+        			handleMemoryRequest(pcbIndex, buf.address, buf.isWrite);
     			} else if (buf.msg == 2) 
 			{
        	 			handleTerminate(pcbIndex);
     			}
 		}
-		unblockBlockedQueue(); // Check to see if any blocked processes now have resources available.	
-		if (currentSimTime % 2500000000LL < 10000)
-			printResourceTable();
-		if (currentSimTime % 5000000000LL < 10000)
+		if (currentSimTime % 100000000LL < 10000)
+			printMemoryTables();
+		if (currentSimTime % 1500000000LL < 10000)
 			printPCB();
-		int request[NUM_RESOURCES * MAX_PROCESSES] = {0};
-		int allocated[NUM_RESOURCES * MAX_PROCESSES] = {0};
-		int available[NUM_RESOURCES];
-
-		for (int i = 0; i < NUM_RESOURCES; i++)
-		{
-			available[i] = resourceTable[i].availableInstances;
-			for (int j = 0; j < MAX_PROCESSES; j++)
-			{
-				request[j * NUM_RESOURCES + i] = resourceTable[i].request[j]; // The fancy math steps through the flattened array
-				allocated[j * NUM_RESOURCES + i] = resourceTable[i].allocation[j];
-			}
-		}
-		if (currentSimTime % 1000000000LL < 10000)
-		{
-			if (deadlock(available, NUM_RESOURCES, MAX_PROCESSES, request, allocated))
-			{
-				logwrite("\nOSS: Deadlock found time: %d seconds %lld nanoseconds\n", clockPtr->seconds, clockPtr->nanoseconds);
-				for (int i = 0; i < MAX_PROCESSES; i++) // find blocked processes and terminate it to end deadlock
-				{
-					if (processTable[i].occupied && processTable[i].blocked)
-					{
-						logwrite("OSS: PID %d terminated to stop a deadlock\n", processTable[i].pid);
-						handleTerminate(i);
-						break;
-					}
-				}
-			}
-		}
+		
 		auto now = chrono::steady_clock::now();
 		if (chrono::duration_cast<chrono::seconds>(now - realTime).count() >= 5)
 		{
