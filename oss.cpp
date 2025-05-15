@@ -77,6 +77,7 @@ const int NUM_FRAMES = MEMORY_SIZE / PAGE_SIZE; // total number of frames
 const int PAGES_PER_PROCESS = 32; // 32KB per process as in specs
 const int MAX_PROCESSES = 18;
 const int NUM_RESOURCES = 5;
+const int SEC_TO_NANO = 1000000000LL;
 simClock* clockPtr;
 const int sh_key = ftok("key.val", 26);
 int shm_id;
@@ -211,6 +212,99 @@ int findPCBIndex(int pid)
         return -1;
 }
 
+int findFrame() // looks to find an available frame in frame table.
+{
+	for (int i = 0; i < NUM_FRAMES; i++)
+	{
+		if (!frameTable[i].occupied)
+		{
+			return i;
+		}
+	}
+	return -1;
+}
+
+int findLRUFrame() // LRU algorithm implementation 
+{
+	int LRUframe = 0;
+	long long LRUtime = (long long)frameTable[0].lastSeconds * SEC_TO_NANO + frameTable[0].lastNano; // grab first time stamp then look for longest time stamp
+
+	for (int i = 1; i < NUM_FRAMES; i++) // loop through frame table and determine which frame was the LRU
+	{
+		long long loopFrameTime = (long long)frameTable[i].lastSeconds * SEC_TO_NANO + frameTable[i].lastNano;
+		if (loopFrameTime < LRUtime) 
+		{
+			LRUtime = loopFrameTime; // so because time starts from 0 like a stop watch for our time stamps the smaller the number the least recently it was used had to wrap my mind around that
+			LRUframe = i;
+		}
+	}
+	return LRUframe;
+}
+
+void handlePageFault(int pcbIndex, int pageNumber, int isWrite) // If there are no frames available in our page table we have faulted. isWrite is from the message determines if we are writing or reading
+{
+	int frame = findFrame();
+
+	if (frame == -1) // no free frames womp womp lets do LRU algorithm
+	{
+		frame = findLRUFrame();
+		int oldPID = frameTable[frame].pid;
+		int oldPageNumber = frameTable[frame].pageNumber;
+
+		processPageTables[oldPID][oldPageNumber].frameNumber = -1; // set this frame to available
+		
+		if (frameTable[frame].dirtybit) // write so add write time
+		{
+			incrementClock(); // add extra time
+			logwrite("OSS: Dirty bit of frame %d set, adding additional time to the clock\n", frame);
+		}
+	}
+
+	// set new frame in frame table
+	frameTable[frame].occupied = 1;
+	frameTable[frame].dirtybit = isWrite;
+	frameTable[frame].lastSeconds = clockPtr->seconds;
+	frameTable[frame].lastNano = clockPtr->nanoseconds;
+	frameTable[frame].pid = processTable[pcbIndex].pid
+	frameTable[frame].pageNumber = pageNumber;
+	
+	// set new page in page table
+	processPageTables[pcbIndex][pageNumber].frameNumber = frame;
+	processPageTables[pcbIndex][pageNumber].dirtybit = isWrite;
+	processPageTables[pcbIndex][pageNumber].lastSeconds = clockPtr->seconds;
+	processPageTables[pcbIndex][pageNumber].lastNano = clockPtr->nanoseconds;
+
+	logwrite("OSS: Clearing frame %d and swapping in p%d page %d\n", frame, pcbIndex, pageNumber);
+}
+
+void printMemoryTables()
+{
+	logwrite("\nCurrent memory layout at time %d:%lld is:\n", clockPtr->seconds, clockPtr->nanoseconds);
+	logwrite("         \tOccupied\tDirtybit\tLastSec\tLastNano\n");
+
+	for (int i = 0; i < NUM_FRAMES; i++) 
+	{
+		logwrite("Frame %d: %s\t%d\t%d%lld\n", i, 
+				frameTable[i].occupied ? "Yes" : "No", 
+				frameTable[i].dirtybit, 
+				frameTable[i].lastSeconds, 
+				frameTable[i].lastNano);
+	}
+
+	logwrite("\nProcess Page Table:\n");
+	for (int i = 0; i < MAX_PROCESSES; i++) 
+	{
+        if (processTable[i].occupied) 
+	{
+            logwrite("P%d page table: [", i);
+            for (int j = 0; j < PAGES_PER_PROCESS; j++) 
+	    {
+                logwrite("%d ", processPageTables[i][j].frameNumber);
+            }
+            logwrite("]\n");
+        }
+    }
+}
 
 int main(int argc, char* argv[]) 
 {
