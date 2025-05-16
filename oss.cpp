@@ -396,6 +396,13 @@ void handleMemoryRequest(int pcbIndex, int address, int isWrite) // handle memor
 		processTable[pcbIndex].blocked = 1;
 		qPF.push(pcbIndex);
 		updateMemoryStats(1); // register page fault in stats table
+
+
+		msgbuffer buf;
+		buf.mtype = processTable[pcbIndex].pid;
+		buf.pid = getpid();
+		buf.msg = 5;
+		msgsnd(msqid, &buf, sizeof(buf) - sizeof(long), 0);
 	} else // not == -1 so we have a page hit
 	{
 		int frame = processPageTables[pcbIndex][pageNumber].frameNumber;
@@ -510,7 +517,7 @@ int main(int argc, char* argv[])
                         int pcbIndex = qPF.front();
                         if (processTable[pcbIndex].occupied)
                         {
-                                if (currentSimTime - processTable[pcbIndex].startNano >= 14000000) // I/O delay
+                                if ((currentSimTime - processTable[pcbIndex].startNano) >= 14000000) // I/O delay
                                 {
                                         processTable[pcbIndex].blocked = 0;
                                         qPF.pop();

@@ -95,8 +95,8 @@ int main(int argc, char** argv)
 			{
 				if (msgrcv(msqid, &buf, sizeof(msgbuffer), getpid(), 0) == -1) 
 				{
-                                perror("msgrcv in parent failed\n");
-                                exit(1);
+                                	perror("msgrcv in parent failed\n");
+                                	exit(1);
                         	}
 				if (buf.msg == 7)
 					blocked = false;
@@ -119,14 +119,14 @@ int main(int argc, char** argv)
 				}
 			}
 
-			if (calculateTime(lastSec, lastNano, simClock->seconds, simClock->nanoseconds) >= 250000000)
+			if (calculateTime(lastSec, lastNano, simClock->seconds, simClock->nanoseconds) >= 100000000)
 			{
 				// generate random memory address
 				int pageNumber = rand() % PAGES_PER_PROCESS;
 				int offset = rand() % PAGE_SIZE;
 				int address = (pageNumber * PAGE_SIZE) + offset;
 				
-				// determine if read or write (bias towards reads)
+				// determine if read or write (read bias)
 				int isWrite = (rand() % 100 < 20) ? 1 : 0; // 20% chance of write
 				
 				reply.msg = isWrite ? 1 : 0;
