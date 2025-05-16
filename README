@@ -1,36 +1,60 @@
-# Process Management System
+# Process and Memory Management System
 Project for OS 4760 with Professor Mark Hauschild
 Author: Tristan Day
 
 ## Overview
-I use the following Unix/Linux system calls to launch child processes and manage them from a parent process: fork(), execl()
-I removed my OOP based approach to handle the creating and management of child processes and decided to move to a more streamline functional approach.
-This has project has two parts oss.cpp and worker.cpp. oss.cpp is the main process of the project whereas worker.cpp is the child process.
-A demo call using this project is "./oss -n 4 -i 250 -s 2 -f logfile.txt" which would create 4 processes, 250 ms between launches, 2 simultaneous max and save data to a file called "logfile.txt".
+This project implements a process and memory management system using Unix/Linux system calls. The system consists of two main components:
+- `oss.cpp`: The main process (Operating System Simulator) that manages processes and memory
+- `worker.cpp`: Child processes that request memory access
 
-### main()
-Main hosts most of the interacting with the forking processes and also making calls to the other utility functions in the oss.cpp file.
+The system uses the following key system calls:
+- `fork()` and `execl()` for process creation
+- Shared memory for system clock synchronization
+- Message queues for inter-process communication
 
-### handleRequest()
-This function just has the handling of the resource requests sent from a worker process. It checks to see if it is grantable if it is grant it else block the process because it is now stuck.
+## Process Management Features
+- Maximum of 18 concurrent user processes
+- Process creation with configurable intervals
+- Process termination after 1000 +/- 100 memory accesses
+- Resource cleanup on process termination
 
-### handleRelease()
-This rarely gets called but a process so graciously has allowed OSS to take back a resource that it had previously taken.
+## Usage
+```bash
+./oss [-h] [-n proc] [-s simul] [-i intervalInMsToLaunchChildren] [-f logfile]
+```
+Parameters:
+- `-n`: Total number of processes to create
+- `-s`: Maximum number of simultaneous processes
+- `-i`: Interval in milliseconds between process launches
+- `-f`: Log file name for OSS output
 
-### handleTerminate()
-This handles the termination message sent from a worker and removes all the information about this process.
+Example:
+```bash
+./oss -n 4 -i 250 -s 2 -f logfile.txt
+```
 
-### unblockBlockedQueue()
-This will unblock a previously blocked process if its last request becomes grantable
+## Key Functions
 
-### req_lt_avail()
-code given from the lecture notes. I believe what this function does is simulate if the requests can be given or not.
+### Memory Management
+- `handleMemoryRequest()`: Processes memory access requests
+- `handlePageFault()`: Manages page faults and frame allocation
+- `findLRUFrame()`: Implements LRU page replacement
+- `findFreeFrame()`: Locates available frames
 
-### deadlock()
-code given from lecture notes. runs through the current state of our resource table and determines whether or not a process will remain indefinitely blocked.
+### Process Management
+- `handleRequest()`: Processes resource requests
+- `handleTerminate()`: Handles process termination
 
-## Issues I've had this far
-I'm not entirely sure my deadlock is working as intended. I really feel like I got this project close but not as close as I would have liked. I had a lot of issues wrapping my head around how to tackle this project but I'm proud of what I was able to accomplish.
+## Statistics and Monitoring
+- Page fault rate
+- Memory layout display every second
+- Frame table and page table status
 
-## Next steps
-I wish I could have gotten deadlock to work properly and gotten some of the aspects of the project done. I didn't have time to implement the verbosity of the logs which was a bummer.
+## Implementation Details
+- Uses shared memory for system clock
+- Message queues for process communication
+- Signal handling for clean termination
+- Resource cleanup on exit
+
+## Known Issues
+- Page tables don't fill up like they are expected to
