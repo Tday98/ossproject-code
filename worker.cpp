@@ -83,6 +83,8 @@ int main(int argc, char** argv)
 		printf("WORKER PID:%d PPID:%d SysClockS: %d SysclockNano: %lld\n--Just Starting\n", getpid(), getppid(), simClock->seconds, simClock->nanoseconds);
 		bool done = false;
 		int memoryAccesses = 0;
+		const int TERMINATION = 1000 + (rand() % 201 - 100);
+
 		while (!done)
 		{
 			srand(getpid() ^ time(NULL));
@@ -100,11 +102,18 @@ int main(int argc, char** argv)
 					blocked = false;
 			}
 
-			if (memoryAccesses > 0 && memoryAccesses % (1000 + (rand() % 201 - 100)) == 0)
+			if (memoryAccesses >= TERMINATION)
 			{
 				if ((rand() % 100) < 5)
 				{
 					reply.msg = 2;
+					reply.mtype = getppid();
+					reply.pid = getpid();
+					if (msgsnd(msqid, &reply, sizeof(reply) - sizeof(long), 0) == -1)
+					{
+						perror("Worker:msgsnd failed");
+					}
+
 					done = true;
 					break;
 				}

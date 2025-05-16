@@ -70,6 +70,15 @@ struct FrameTable
 	int pageNumber; // page number also discussed in specs
 };
 
+// building struct to store memory statistics as per project specs.
+struct MemoryStats
+{
+	long long totalAccesses;
+	long long totalPageFaults;
+	int lastPrint;
+	int seconds;
+} memoryStats = {0,0,0,0};
+
 // Global Values
 const int PAGE_SIZE = 1024; // 1KB page size
 const int MEMORY_SIZE = 128 * 1024; // 128KB total memory
@@ -318,11 +327,12 @@ void handlePageFault(int pcbIndex, int pageNumber, int isWrite) // If there are 
 void printMemoryTables() // print function to display what is requested from the specs
 {
 	logwrite("\nCurrent memory layout at time %d:%lld is:\n", clockPtr->seconds, clockPtr->nanoseconds);
-	logwrite("         \tOccupied\tDirtybit\tLastSec\tLastNano\n");
+	logwrite("Frame\tOccupied\tDirtybit\tLastSec\t\tLastNano\n");
 
 	for (int i = 0; i < NUM_FRAMES; i++) 
 	{
-		logwrite("Frame %d: %s\t%d\t%d%lld\n", i, 
+		logwrite("%d: \t%s\t\t%d\t\t%d\t\t%lld\n", 
+				i, 
 				frameTable[i].occupied ? "Yes" : "No", 
 				frameTable[i].dirtybit, 
 				frameTable[i].lastSeconds, 
@@ -344,6 +354,30 @@ void printMemoryTables() // print function to display what is requested from the
     }
 }
 
+void updateMemoryStats(int isPageFault) {
+    	memoryStats.totalAccesses++;
+
+    	if (isPageFault) 
+	{
+        	memoryStats.totalPageFaults++;
+    	}
+
+    	// Print statistics every second
+    	if (clockPtr->seconds > memoryStats.lastPrint) 
+	{
+        	logwrite("\nMemory Statistics at time %d:%lld:\n",
+                	clockPtr->seconds, clockPtr->nanoseconds);
+        	logwrite("Total memory accesses: %lld\n", memoryStats.totalAccesses);
+        	logwrite("Total page faults: %lld\n", memoryStats.totalPageFaults);
+        	if (memoryStats.totalAccesses > 0) 
+		{
+            		logwrite("Overall page fault rate: %.2f%%\n",
+                    		(float)memoryStats.totalPageFaults * 100 / memoryStats.totalAccesses);
+        	}
+    	}
+	memoryStats.lastPrint = clockPtr->seconds; // keep track of the last time we printed so we print every second
+}
+
 void handleMemoryRequest(int pcbIndex, int address, int isWrite) // handle memory addresses checks for page fault or hit
 {
 	int pageNumber = address / PAGE_SIZE;
@@ -361,6 +395,7 @@ void handleMemoryRequest(int pcbIndex, int address, int isWrite) // handle memor
 		handlePageFault(pcbIndex, pageNumber, isWrite);
 		processTable[pcbIndex].blocked = 1;
 		qPF.push(pcbIndex);
+		updateMemoryStats(1); // register page fault in stats table
 	} else // not == -1 so we have a page hit
 	{
 		int frame = processPageTables[pcbIndex][pageNumber].frameNumber;
@@ -379,6 +414,7 @@ void handleMemoryRequest(int pcbIndex, int address, int isWrite) // handle memor
                  pcbIndex, 
 		 clockPtr->seconds, 
 		 clockPtr->nanoseconds);
+		updateMemoryStats(0);
 	}
 }
 
@@ -468,6 +504,32 @@ int main(int argc, char* argv[])
 		incrementClock();
 		
 		long long currentSimTime = (long long)clockPtr->seconds * 1000000000LL + clockPtr->nanoseconds;
+		
+		if (!qPF.empty())
+                {
+                        int pcbIndex = qPF.front();
+                        if (processTable[pcbIndex].occupied)
+                        {
+                                if (currentSimTime - processTable[pcbIndex].startNano >= 14000000) // I/O delay
+                                {
+                                        processTable[pcbIndex].blocked = 0;
+                                        qPF.pop();
+
+                                        msgbuffer buf;
+                                        buf.mtype = processTable[pcbIndex].pid;
+                                        buf.pid = getpid();
+                                        buf.msg = 7; // unblock the process
+                                        msgsnd(msqid, &buf, sizeof(buf) - sizeof(long), 0);
+
+                                        logwrite("OSS: Unblocking process %d after page fault at time %d:%lld\n",
+                                                        processTable[pcbIndex].pid, clockPtr->seconds, clockPtr->nanoseconds);
+                                } else
+                                {
+                                        qPF.pop();
+                                }
+                        }
+                }
+		
 		if ((currentSimTime - lastFork) >= (n_inter * 1000000) 
 				&& totalLaunched <= n_proc
 				&& activeProcesses() < n_simul) //check that we can fork again n_inter time restraint and that we havent created more processes than requested 
@@ -491,24 +553,6 @@ int main(int argc, char* argv[])
 			}
 		}
 
-		if (!qPF.empty())
-		{
-			int pcbIndex = qPF.front();
-			if (processTable[pcbIndex].occupied)
-			{
-				if (currentSimTime - processTable[pcbIndex].startNano >= 14000000) // I/O delay
-				{
-					processTable[pcbIndex].blocked = 0;
-					qPF.pop();
-
-					msgbuffer buf;
-					buf.mtype = processTable[pcbIndex].pid;
-					buf.pid = getpid();
-					buf.msg = 7; // unblock the process
-					msgsnd(msqid, &buf, sizeof(buf) - sizeof(long), 0);
-				}
-			}
-		}
 
 		msgbuffer buf;
 		if (msgrcv(msqid, &buf, sizeof(buf) - sizeof(long), getpid(), IPC_NOWAIT) > 0) 
